@@ -135,9 +135,9 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: false, // Set to false for Railway deployment
-    httpOnly: true,
+    httpOnly: false, // Set to false to allow JavaScript access
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax', // Set to 'lax' for cross-origin
+    sameSite: 'none', // Set to 'none' for cross-origin
     // Remove domain restriction to allow cross-origin sessions
   }
 }));
