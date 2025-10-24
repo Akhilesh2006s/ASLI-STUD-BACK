@@ -132,11 +132,11 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to false for development
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
     sameSite: 'lax', // Set to 'lax' for development
-    domain: 'localhost' // Explicitly set domain
+    // Remove domain restriction to allow cross-origin sessions
   }
 }));
 
