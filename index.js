@@ -140,13 +140,13 @@ app.use('/uploads', express.static('uploads'));
 // Session configuration
 app.use(session({
   secret: process.env.SESSION_SECRET || 'your-secret-key',
-  resave: false,
-  saveUninitialized: false,
+  resave: true, // Set to true to ensure session is saved
+  saveUninitialized: true, // Set to true to save new sessions
   cookie: {
     secure: false, // Set to false for Railway deployment
     httpOnly: false, // Set to false to allow JavaScript access
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'none', // Set to 'none' for cross-origin
+    sameSite: 'lax', // Set to 'lax' for better compatibility
     // Remove domain restriction to allow cross-origin sessions
   }
 }));
@@ -379,7 +379,9 @@ app.post('/api/auth/login', (req, res, next) => {
       console.log('Session created successfully:', {
         sessionID: req.sessionID,
         isAuthenticated: req.isAuthenticated(),
-        user: req.user ? req.user.email : 'No user'
+        user: req.user ? req.user.email : 'No user',
+        sessionData: req.session,
+        cookies: req.headers.cookie
       });
       
       let userData = { 
