@@ -267,7 +267,9 @@ const requireAuth = (req, res, next) => {
     isAuthenticated: req.isAuthenticated(),
     user: req.user ? req.user.email : 'No user',
     sessionID: req.sessionID,
-    session: req.session
+    session: req.session,
+    headers: req.headers.origin,
+    cookies: req.headers.cookie
   });
   if (req.isAuthenticated()) {
     return next();
@@ -363,6 +365,12 @@ app.post('/api/auth/login', (req, res, next) => {
         console.error('Session creation error:', err);
         return res.status(500).json({ message: 'Login failed' });
       }
+      
+      console.log('Session created successfully:', {
+        sessionID: req.sessionID,
+        isAuthenticated: req.isAuthenticated(),
+        user: req.user ? req.user.email : 'No user'
+      });
       
       let userData = { 
         id: user._id, 
