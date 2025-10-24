@@ -6,6 +6,7 @@ import { Strategy as LocalStrategy } from 'passport-local';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 import multer from 'multer';
 
 // Import models
@@ -271,20 +272,24 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
-// Middleware to check authentication
+// JWT Middleware to check authentication
 const requireAuth = (req, res, next) => {
-  console.log('Auth check:', {
-    isAuthenticated: req.isAuthenticated(),
-    user: req.user ? req.user.email : 'No user',
-    sessionID: req.sessionID,
-    session: req.session,
-    headers: req.headers.origin,
-    cookies: req.headers.cookie
-  });
-  if (req.isAuthenticated()) {
-    return next();
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    console.log('No token provided');
+    return res.status(401).json({ message: 'Not authenticated' });
   }
-  res.status(401).json({ message: 'Not authenticated' });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-jwt-secret');
+    req.user = decoded;
+    console.log('JWT Auth successful:', decoded);
+    next();
+  } catch (error) {
+    console.log('JWT verification failed:', error.message);
+    res.status(401).json({ message: 'Not authenticated' });
+  }
 };
 
 // Middleware to check admin role
@@ -401,9 +406,21 @@ app.post('/api/auth/login', (req, res, next) => {
         }
       }
       
+      // Create JWT token
+      const token = jwt.sign(
+        { 
+          userId: user._id, 
+          email: user.email, 
+          role: user.role 
+        },
+        process.env.JWT_SECRET || 'your-jwt-secret',
+        { expiresIn: '24h' }
+      );
+
       res.json({ 
         message: 'Login successful',
-        user: userData
+        user: userData,
+        token: token
       });
     });
   })(req, res, next);
@@ -420,11 +437,17 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   try {
     console.log('Auth me requested by:', req.user.email, 'Role:', req.user.role);
     
+    // Find user in database to get full details
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
     let userData = { 
-      id: req.user._id, 
-      email: req.user.email, 
-      fullName: req.user.fullName, 
-      role: req.user.role 
+      id: user._id, 
+      email: user.email, 
+      fullName: user.fullName, 
+      role: user.role 
     };
 
     // If user is a teacher, fetch their subjects
