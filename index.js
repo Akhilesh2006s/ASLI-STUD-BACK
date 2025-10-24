@@ -113,7 +113,8 @@ app.use(cors({
     'https://alsi-stud-frontend-mf3r-hugnvpnzk-akhilesh2006s-projects.vercel.app',
     'https://alsi-stud-frontend-mf3r-5i351br51-akhilesh2006s-projects.vercel.app',
     'https://alsi-stud-frontend-mf3r-6p7vghuuv-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-9pn4j5v4f-akhilesh2006s-projects.vercel.app', // Latest Vercel URL
+    'https://alsi-stud-frontend-mf3r-9pn4j5v4f-akhilesh2006s-projects.vercel.app',
+    'https://alsi-stud-frontend-mf3r-18qclrtbv-akhilesh2006s-projects.vercel.app', // Latest Vercel URL
     'https://alsi-stud-frontend-mf3r.vercel.app',
     process.env.CLIENT_URL
   ].filter(Boolean),
