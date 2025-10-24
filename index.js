@@ -105,6 +105,7 @@ app.use(cors({
     'http://localhost:5177',
     'https://alsi-stud-frontend-mf3r-ampkob5el-akhilesh2006s-projects.vercel.app',
     'https://alsi-stud-frontend-mf3r-es6c3f5aq-akhilesh2006s-projects.vercel.app',
+    'https://alsi-stud-frontend-mf3r-ea1jir1t6-akhilesh2006s-projects.vercel.app',
     'https://alsi-stud-frontend-mf3r.vercel.app',
     process.env.CLIENT_URL
   ].filter(Boolean),
