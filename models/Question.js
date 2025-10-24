@@ -1,0 +1,85 @@
+import mongoose from 'mongoose';
+
+const questionSchema = new mongoose.Schema({
+  questionText: {
+    type: String,
+    required: function() {
+      return !this.questionImage;
+    },
+    trim: true
+  },
+  questionImage: {
+    type: String, // URL to uploaded image
+    default: null
+  },
+  questionType: {
+    type: String,
+    enum: ['mcq', 'multiple', 'integer'],
+    required: true
+  },
+  options: [{
+    text: String,
+    isCorrect: Boolean
+  }],
+  correctAnswer: {
+    type: mongoose.Schema.Types.Mixed, // Can be string, number, or array
+    required: true
+  },
+  marks: {
+    type: Number,
+    required: true,
+    default: 1
+  },
+  negativeMarks: {
+    type: Number,
+    default: 0
+  },
+  explanation: {
+    type: String,
+    trim: true
+  },
+  subject: {
+    type: String,
+    enum: ['maths', 'physics', 'chemistry'],
+    required: true,
+    default: 'maths'
+  },
+  exam: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Exam',
+    required: true
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Custom validation to ensure either questionText or questionImage is provided
+questionSchema.pre('validate', function(next) {
+  if (!this.questionText?.trim() && !this.questionImage) {
+    return next(new Error('Either question text or image is required'));
+  }
+  next();
+});
+
+// Update the updatedAt field before saving
+questionSchema.pre('save', function(next) {
+  this.updatedAt = Date.now();
+  next();
+});
+
+export default mongoose.model('Question', questionSchema);
