@@ -19,6 +19,7 @@ import Subject from './models/Subject.js';
 import UserProgress from './models/UserProgress.js';
 import Exam from './models/Exam.js';
 import Question from './models/Question.js';
+import ExamResult from './models/ExamResult.js';
 
 // Import routes
 import superAdminRoutes from './routes/superAdmin.js';

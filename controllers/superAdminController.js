@@ -51,21 +51,35 @@ export const getDashboardStats = async (req, res) => {
     const totalTeachers = await Teacher.countDocuments();
     const totalVideos = await Video.countDocuments();
     const totalAssessments = await Assessment.countDocuments();
+    const totalExams = await Exam.countDocuments();
     const totalAdmins = await User.countDocuments({ role: 'admin' });
     
-    // Calculate revenue (mock data for now)
-    const revenue = 245678;
+    // Calculate meaningful metrics instead of mock revenue
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalExamResults = await ExamResult.countDocuments();
+    const activeVideos = await Video.countDocuments({ isActive: true });
+    const activeAssessments = await Assessment.countDocuments({ isActive: true });
+    
+    // Calculate engagement metrics
+    const avgExamsPerStudent = totalStudents > 0 ? (totalExamResults / totalStudents).toFixed(1) : 0;
+    const contentEngagement = totalVideos + totalAssessments + totalExams;
     
     res.json({
       success: true,
       data: {
         totalUsers,
-        revenue,
+        totalStudents,
+        totalTeachers,
+        totalAdmins,
         courses: totalVideos,
-        teachers: totalTeachers,
-        admins: totalAdmins,
-        superAdmins: 1,
-        assessments: totalAssessments
+        assessments: totalAssessments,
+        exams: totalExams,
+        examResults: totalExamResults,
+        activeVideos,
+        activeAssessments,
+        avgExamsPerStudent,
+        contentEngagement,
+        superAdmins: 1
       }
     });
   } catch (error) {
