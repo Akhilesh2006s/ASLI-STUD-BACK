@@ -42,6 +42,10 @@ const videoSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Teacher',
@@ -68,7 +72,9 @@ const videoSchema = new mongoose.Schema({
 videoSchema.index({ subjectId: 1 });
 videoSchema.index({ difficulty: 1 });
 videoSchema.index({ isPublished: 1 });
+videoSchema.index({ isActive: 1 });
 videoSchema.index({ createdAt: -1 });
 videoSchema.index({ adminId: 1 }); // Multi-tenant index
+videoSchema.index({ adminId: 1, isActive: 1 }); // Compound index for student queries
 
 export default mongoose.model('Video', videoSchema);
