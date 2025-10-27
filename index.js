@@ -25,6 +25,7 @@ import ExamResult from './models/ExamResult.js';
 import superAdminRoutes from './routes/superAdmin.js';
 import adminRoutes from './routes/admin.js';
 import studentRoutes from './routes/student.js';
+import aiRoutes from './routes/ai.js';
 
 // Load environment variables
 dotenv.config();
@@ -152,6 +153,7 @@ app.options('/api/*', (req, res) => {
 app.use('/api/super-admin', superAdminRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/student', studentRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Serve static files
 app.use('/uploads', express.static('uploads'));

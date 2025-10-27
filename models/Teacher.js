@@ -1,6 +1,11 @@
 import mongoose from 'mongoose';
 
 const teacherSchema = new mongoose.Schema({
+  fullName: {
+    type: String,
+    required: true,
+    trim: true
+  },
   email: {
     type: String,
     required: true,
@@ -10,56 +15,54 @@ const teacherSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: true,
+    minlength: 6
   },
-  fullName: {
+  department: {
     type: String,
     required: true,
     trim: true
   },
   subjects: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Subject'
-  }],
-  role: {
     type: String,
-    enum: ['teacher'],
-    default: 'teacher'
+    trim: true
+  }],
+  qualifications: {
+    type: String,
+    trim: true
+  },
+  experience: {
+    type: Number,
+    default: 0
+  },
+  phone: {
+    type: String,
+    trim: true
   },
   isActive: {
     type: Boolean,
     default: true
   },
-  lastLogin: {
-    type: Date
-  },
-  phone: {
-    type: String,
-    default: ''
-  },
-  department: {
-    type: String,
-    default: ''
-  },
-  qualifications: {
-    type: String,
-    default: ''
-  },
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+  },
+  permissions: [{
+    type: String,
+    enum: ['create_content', 'manage_students', 'view_analytics', 'create_exams']
+  }],
+  lastLogin: {
+    type: Date
   }
 }, {
   timestamps: true
 });
 
-// Index for better performance
-teacherSchema.index({ role: 1 });
-teacherSchema.index({ subjects: 1 });
+// Indexes for better performance
+teacherSchema.index({ email: 1 });
 teacherSchema.index({ adminId: 1 });
+teacherSchema.index({ department: 1 });
+teacherSchema.index({ isActive: 1 });
 
 export default mongoose.model('Teacher', teacherSchema);
-
-
-
