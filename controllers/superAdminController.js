@@ -104,31 +104,32 @@ export const getAllAdmins = async (req, res) => {
           examCount,
           examResults
         ] = await Promise.all([
-          User.countDocuments({ role: 'student', assignedAdmin: admin._id }),
-          Teacher.countDocuments({ adminId: admin._id }),
-          Video.countDocuments({ adminId: admin._id }),
-          Assessment.countDocuments({ adminId: admin._id }),
-          Exam.countDocuments({ adminId: admin._id }),
-          ExamResult.find({ adminId: admin._id }).populate('userId', 'fullName email')
+          User.countDocuments({ role: 'student', assignedAdmin: admin._id }).catch(() => 0),
+          Teacher.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Video.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Assessment.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Exam.countDocuments({ adminId: admin._id }).catch(() => 0),
+          ExamResult.find({ adminId: admin._id }).populate('userId', 'fullName email').catch(() => [])
         ]);
         
         // Calculate exam performance analytics
         const totalExamsTaken = examResults.length;
-        const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + result.totalQuestions, 0);
-        const totalCorrectAnswers = examResults.reduce((sum, result) => sum + result.correctAnswers, 0);
-        const totalMarksObtained = examResults.reduce((sum, result) => sum + result.obtainedMarks, 0);
-        const totalMarksPossible = examResults.reduce((sum, result) => sum + result.totalMarks, 0);
+        const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + (result.totalQuestions || 0), 0);
+        const totalCorrectAnswers = examResults.reduce((sum, result) => sum + (result.correctAnswers || 0), 0);
+        const totalMarksObtained = examResults.reduce((sum, result) => sum + (result.obtainedMarks || 0), 0);
+        const totalMarksPossible = examResults.reduce((sum, result) => sum + (result.totalMarks || 0), 0);
         
         const averageScore = totalMarksPossible > 0 ? (totalMarksObtained / totalMarksPossible * 100).toFixed(1) : 0;
         const averageAccuracy = totalQuestionsAnswered > 0 ? (totalCorrectAnswers / totalQuestionsAnswered * 100).toFixed(1) : 0;
         
         // Get top performing students
         const studentPerformance = examResults.reduce((acc, result) => {
+          if (!result.userId || !result.userId._id) return acc;
           const studentId = result.userId._id.toString();
           if (!acc[studentId]) {
             acc[studentId] = {
-              studentName: result.userId.fullName,
-              studentEmail: result.userId.email,
+              studentName: result.userId.fullName || 'Unknown',
+              studentEmail: result.userId.email || 'unknown@email.com',
               totalExams: 0,
               totalMarks: 0,
               totalPossibleMarks: 0,
@@ -136,8 +137,9 @@ export const getAllAdmins = async (req, res) => {
             };
           }
           acc[studentId].totalExams += 1;
-          acc[studentId].totalMarks += result.obtainedMarks;
-          acc[studentId].totalPossibleMarks += result.totalMarks;
+          acc[studentId].totalMarks += (result.obtainedMarks || 0);
+          acc[studentId].totalPossibleMarks += (result.totalMarks || 0);
+          return acc;
         }, {});
         
         // Calculate average scores for each student
@@ -157,11 +159,11 @@ export const getAllAdmins = async (req, res) => {
           .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
           .slice(0, 10)
           .map(result => ({
-            examTitle: result.examTitle,
-            studentName: result.userId.fullName,
-            score: result.percentage,
-            marks: `${result.obtainedMarks}/${result.totalMarks}`,
-            completedAt: result.completedAt
+            examTitle: result.examTitle || 'Unknown Exam',
+            studentName: result.userId?.fullName || 'Unknown Student',
+            score: result.percentage || 0,
+            marks: `${result.obtainedMarks || 0}/${result.totalMarks || 0}`,
+            completedAt: result.completedAt || new Date()
           }));
         
         // Calculate subject-wise performance
