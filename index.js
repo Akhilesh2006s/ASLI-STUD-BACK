@@ -104,28 +104,51 @@ async function seedSampleData() {
 }
 
 // Middleware
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174', 
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:5177',
+  'https://alsi-stud-frontend-mf3r-ampkob5el-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-es6c3f5aq-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-ea1jir1t6-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-r50hrstmi-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-12gsssa10-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-gajkeubdu-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-hugnvpnzk-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-5i351br51-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-6p7vghuuv-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-9pn4j5v4f-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-18qclrtbv-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-mlmb076jn-akhilesh2006s-projects.vercel.app', // Previous Vercel URL
+  'https://alsi-stud-frontend-mf3r-m8dmkdu86-akhilesh2006s-projects.vercel.app', // Latest Vercel URL
+  'https://alsi-stud-frontend-mf3r.vercel.app',
+  process.env.CLIENT_URL
+].filter(Boolean);
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173',
-    'http://localhost:5174', 
-    'http://localhost:5175',
-    'http://localhost:5176',
-    'http://localhost:5177',
-    'https://alsi-stud-frontend-mf3r-ampkob5el-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-es6c3f5aq-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-ea1jir1t6-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-r50hrstmi-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-12gsssa10-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-gajkeubdu-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-hugnvpnzk-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-5i351br51-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-6p7vghuuv-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-9pn4j5v4f-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-18qclrtbv-akhilesh2006s-projects.vercel.app',
-    'https://alsi-stud-frontend-mf3r-mlmb076jn-akhilesh2006s-projects.vercel.app', // Latest Vercel URL
-    'https://alsi-stud-frontend-mf3r.vercel.app',
-    process.env.CLIENT_URL
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Allow any Vercel subdomain pattern for your project
+    if (origin && origin.match(/^https:\/\/alsi-stud-frontend-mf3r-[a-z0-9]+-akhilesh2006s-projects\.vercel\.app$/)) {
+      return callback(null, true);
+    }
+    
+    // Allow the main Vercel domain
+    if (origin && origin.match(/^https:\/\/alsi-stud-frontend-mf3r\.vercel\.app$/)) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
