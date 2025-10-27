@@ -1248,17 +1248,46 @@ app.delete('/api/admin/exams/:id', async (req, res) => {
 // Save exam results
 app.post('/api/student/exam-results', requireAuth, async (req, res) => {
   try {
+    const { examId, examTitle, totalQuestions, correctAnswers, wrongAnswers, unattempted, totalMarks, obtainedMarks, percentage, timeTaken, subjectWiseScore, answers } = req.body;
+    
+    // Get student's assigned admin
+    const student = await User.findById(req.user.id);
+    if (!student || !student.assignedAdmin) {
+      return res.status(400).json({ message: 'Student not assigned to any admin' });
+    }
+    
     const resultData = {
-      ...req.body,
+      examId,
       userId: req.user.id,
+      adminId: student.assignedAdmin,
+      examTitle,
+      totalQuestions,
+      correctAnswers,
+      wrongAnswers,
+      unattempted,
+      totalMarks,
+      obtainedMarks,
+      percentage,
+      timeTaken,
+      subjectWiseScore,
+      answers,
       completedAt: new Date()
     };
     
-    // Create a new result document (you might want to create a Result model)
-    // For now, we'll just return success
+    // Import ExamResult model
+    const ExamResult = (await import('./models/ExamResult.js')).default;
+    
+    // Save to database
+    const examResult = new ExamResult(resultData);
+    await examResult.save();
+    
     console.log('Exam result saved:', resultData);
     
-    res.status(201).json({ message: 'Result saved successfully' });
+    res.status(201).json({ 
+      success: true,
+      message: 'Result saved successfully',
+      data: examResult
+    });
   } catch (error) {
     console.error('Failed to save exam result:', error);
     res.status(500).json({ message: 'Failed to save result' });

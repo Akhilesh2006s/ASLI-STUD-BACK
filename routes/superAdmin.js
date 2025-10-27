@@ -8,6 +8,7 @@ import {
   superAdminLogin,
   getDashboardStats,
   getAllAdmins,
+  getAdminAnalytics,
   createAdmin,
   updateAdmin,
   deleteAdmin,
@@ -37,6 +38,7 @@ router.get('/analytics', getAnalytics);
 
 // Admin Management
 router.get('/admins', getAllAdmins);
+router.get('/admins/:adminId/analytics', getAdminAnalytics);
 router.post('/admins', createAdmin);
 router.put('/admins/:id', updateAdmin);
 router.delete('/admins/:id', deleteAdmin);

@@ -5,6 +5,7 @@ import Video from '../models/Video.js';
 import Teacher from '../models/Teacher.js';
 import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
+import ExamResult from '../models/ExamResult.js';
 
 // Super Admin Login
 export const superAdminLogin = async (req, res) => {
@@ -73,21 +74,111 @@ export const getDashboardStats = async (req, res) => {
   }
 };
 
-// Get All Admins with their data counts
+// Get All Admins with comprehensive analytics
 export const getAllAdmins = async (req, res) => {
   try {
     const admins = await User.find({ role: 'admin' }).select('-password');
     
-    // Get data counts for each admin
-    const adminsWithCounts = await Promise.all(
+    // Get comprehensive analytics for each admin
+    const adminsWithAnalytics = await Promise.all(
       admins.map(async (admin) => {
-        const [studentCount, teacherCount, videoCount, assessmentCount, examCount] = await Promise.all([
+        const [
+          studentCount, 
+          teacherCount, 
+          videoCount, 
+          assessmentCount, 
+          examCount,
+          examResults
+        ] = await Promise.all([
           User.countDocuments({ role: 'student', assignedAdmin: admin._id }),
           Teacher.countDocuments({ adminId: admin._id }),
           Video.countDocuments({ adminId: admin._id }),
           Assessment.countDocuments({ adminId: admin._id }),
-          Exam.countDocuments({ adminId: admin._id })
+          Exam.countDocuments({ adminId: admin._id }),
+          ExamResult.find({ adminId: admin._id }).populate('userId', 'fullName email')
         ]);
+        
+        // Calculate exam performance analytics
+        const totalExamsTaken = examResults.length;
+        const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + result.totalQuestions, 0);
+        const totalCorrectAnswers = examResults.reduce((sum, result) => sum + result.correctAnswers, 0);
+        const totalMarksObtained = examResults.reduce((sum, result) => sum + result.obtainedMarks, 0);
+        const totalMarksPossible = examResults.reduce((sum, result) => sum + result.totalMarks, 0);
+        
+        const averageScore = totalMarksPossible > 0 ? (totalMarksObtained / totalMarksPossible * 100).toFixed(1) : 0;
+        const averageAccuracy = totalQuestionsAnswered > 0 ? (totalCorrectAnswers / totalQuestionsAnswered * 100).toFixed(1) : 0;
+        
+        // Get top performing students
+        const studentPerformance = examResults.reduce((acc, result) => {
+          const studentId = result.userId._id.toString();
+          if (!acc[studentId]) {
+            acc[studentId] = {
+              studentName: result.userId.fullName,
+              studentEmail: result.userId.email,
+              totalExams: 0,
+              totalMarks: 0,
+              totalPossibleMarks: 0,
+              averageScore: 0
+            };
+          }
+          acc[studentId].totalExams += 1;
+          acc[studentId].totalMarks += result.obtainedMarks;
+          acc[studentId].totalPossibleMarks += result.totalMarks;
+        }, {});
+        
+        // Calculate average scores for each student
+        Object.values(studentPerformance).forEach(student => {
+          student.averageScore = student.totalPossibleMarks > 0 
+            ? (student.totalMarks / student.totalPossibleMarks * 100).toFixed(1)
+            : 0;
+        });
+        
+        // Sort students by performance
+        const topStudents = Object.values(studentPerformance)
+          .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore))
+          .slice(0, 5);
+        
+        // Get recent exam results
+        const recentResults = examResults
+          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+          .slice(0, 10)
+          .map(result => ({
+            examTitle: result.examTitle,
+            studentName: result.userId.fullName,
+            score: result.percentage,
+            marks: `${result.obtainedMarks}/${result.totalMarks}`,
+            completedAt: result.completedAt
+          }));
+        
+        // Calculate subject-wise performance
+        const subjectPerformance = {};
+        examResults.forEach(result => {
+          if (result.subjectWiseScore) {
+            Object.entries(result.subjectWiseScore).forEach(([subject, data]) => {
+              if (!subjectPerformance[subject]) {
+                subjectPerformance[subject] = {
+                  totalQuestions: 0,
+                  correctAnswers: 0,
+                  totalMarks: 0,
+                  obtainedMarks: 0
+                };
+              }
+              subjectPerformance[subject].totalQuestions += data.total;
+              subjectPerformance[subject].correctAnswers += data.correct;
+              subjectPerformance[subject].totalMarks += data.marks;
+              subjectPerformance[subject].obtainedMarks += data.marks;
+            });
+          }
+        });
+        
+        // Calculate subject-wise averages
+        const subjectAnalytics = Object.entries(subjectPerformance).map(([subject, data]) => ({
+          subject,
+          accuracy: data.totalQuestions > 0 ? (data.correctAnswers / data.totalQuestions * 100).toFixed(1) : 0,
+          averageScore: data.totalMarks > 0 ? (data.obtainedMarks / data.totalMarks * 100).toFixed(1) : 0,
+          totalQuestions: data.totalQuestions,
+          correctAnswers: data.correctAnswers
+        }));
         
         return {
           id: admin._id,
@@ -101,7 +192,19 @@ export const getAllAdmins = async (req, res) => {
             teachers: teacherCount,
             videos: videoCount,
             assessments: assessmentCount,
-            exams: examCount
+            exams: examCount,
+            totalExamsTaken: totalExamsTaken,
+            averageScore: averageScore,
+            averageAccuracy: averageAccuracy
+          },
+          analytics: {
+            topStudents: topStudents,
+            recentResults: recentResults,
+            subjectPerformance: subjectAnalytics,
+            totalQuestionsAnswered: totalQuestionsAnswered,
+            totalCorrectAnswers: totalCorrectAnswers,
+            totalMarksObtained: totalMarksObtained,
+            totalMarksPossible: totalMarksPossible
           }
         };
       })
@@ -109,11 +212,162 @@ export const getAllAdmins = async (req, res) => {
     
     res.json({
       success: true,
-      data: adminsWithCounts
+      data: adminsWithAnalytics
     });
   } catch (error) {
-    console.error('Get admins error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch admins' });
+    console.error('Get admins analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch admin analytics' });
+  }
+};
+
+// Get detailed analytics for a specific admin
+export const getAdminAnalytics = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    
+    // Verify admin exists
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    
+    // Get all exam results for this admin
+    const examResults = await ExamResult.find({ adminId })
+      .populate('userId', 'fullName email')
+      .populate('examId', 'title subject')
+      .sort({ completedAt: -1 });
+    
+    // Get all students assigned to this admin
+    const students = await User.find({ role: 'student', assignedAdmin: adminId })
+      .select('fullName email createdAt');
+    
+    // Get all teachers for this admin
+    const teachers = await Teacher.find({ adminId })
+      .select('fullName email department subjects createdAt');
+    
+    // Calculate comprehensive analytics
+    const totalExamsTaken = examResults.length;
+    const totalStudents = students.length;
+    const totalTeachers = teachers.length;
+    
+    // Performance metrics
+    const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + result.totalQuestions, 0);
+    const totalCorrectAnswers = examResults.reduce((sum, result) => sum + result.correctAnswers, 0);
+    const totalMarksObtained = examResults.reduce((sum, result) => sum + result.obtainedMarks, 0);
+    const totalMarksPossible = examResults.reduce((sum, result) => sum + result.totalMarks, 0);
+    
+    const averageScore = totalMarksPossible > 0 ? (totalMarksObtained / totalMarksPossible * 100).toFixed(1) : 0;
+    const averageAccuracy = totalQuestionsAnswered > 0 ? (totalCorrectAnswers / totalQuestionsAnswered * 100).toFixed(1) : 0;
+    
+    // Student performance analysis
+    const studentPerformance = {};
+    examResults.forEach(result => {
+      const studentId = result.userId._id.toString();
+      if (!studentPerformance[studentId]) {
+        studentPerformance[studentId] = {
+          studentName: result.userId.fullName,
+          studentEmail: result.userId.email,
+          totalExams: 0,
+          totalMarks: 0,
+          totalPossibleMarks: 0,
+          examHistory: []
+        };
+      }
+      studentPerformance[studentId].totalExams += 1;
+      studentPerformance[studentId].totalMarks += result.obtainedMarks;
+      studentPerformance[studentId].totalPossibleMarks += result.totalMarks;
+      studentPerformance[studentId].examHistory.push({
+        examTitle: result.examTitle,
+        score: result.percentage,
+        marks: `${result.obtainedMarks}/${result.totalMarks}`,
+        completedAt: result.completedAt
+      });
+    });
+    
+    // Calculate average scores for each student
+    Object.values(studentPerformance).forEach(student => {
+      student.averageScore = student.totalPossibleMarks > 0 
+        ? (student.totalMarks / student.totalPossibleMarks * 100).toFixed(1)
+        : 0;
+    });
+    
+    // Sort students by performance
+    const topPerformers = Object.values(studentPerformance)
+      .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore))
+      .slice(0, 10);
+    
+    // Subject-wise analysis
+    const subjectAnalysis = {};
+    examResults.forEach(result => {
+      if (result.subjectWiseScore) {
+        Object.entries(result.subjectWiseScore).forEach(([subject, data]) => {
+          if (!subjectAnalysis[subject]) {
+            subjectAnalysis[subject] = {
+              totalQuestions: 0,
+              correctAnswers: 0,
+              totalMarks: 0,
+              obtainedMarks: 0,
+              examCount: 0
+            };
+          }
+          subjectAnalysis[subject].totalQuestions += data.total;
+          subjectAnalysis[subject].correctAnswers += data.correct;
+          subjectAnalysis[subject].totalMarks += data.marks;
+          subjectAnalysis[subject].obtainedMarks += data.marks;
+          subjectAnalysis[subject].examCount += 1;
+        });
+      }
+    });
+    
+    // Calculate subject-wise averages
+    const subjectAnalytics = Object.entries(subjectAnalysis).map(([subject, data]) => ({
+      subject,
+      accuracy: data.totalQuestions > 0 ? (data.correctAnswers / data.totalQuestions * 100).toFixed(1) : 0,
+      averageScore: data.totalMarks > 0 ? (data.obtainedMarks / data.totalMarks * 100).toFixed(1) : 0,
+      totalQuestions: data.totalQuestions,
+      correctAnswers: data.correctAnswers,
+      examCount: data.examCount
+    }));
+    
+    // Recent activity
+    const recentActivity = examResults.slice(0, 20).map(result => ({
+      type: 'exam_completed',
+      studentName: result.userId.fullName,
+      examTitle: result.examTitle,
+      score: result.percentage,
+      completedAt: result.completedAt
+    }));
+    
+    res.json({
+      success: true,
+      data: {
+        admin: {
+          id: admin._id,
+          name: admin.fullName,
+          email: admin.email,
+          joinDate: admin.createdAt
+        },
+        overview: {
+          totalStudents,
+          totalTeachers,
+          totalExamsTaken,
+          averageScore,
+          averageAccuracy,
+          totalQuestionsAnswered,
+          totalCorrectAnswers,
+          totalMarksObtained,
+          totalMarksPossible
+        },
+        topPerformers,
+        subjectAnalytics,
+        recentActivity,
+        allStudents: students,
+        allTeachers: teachers
+      }
+    });
+  } catch (error) {
+    console.error('Get admin analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch admin analytics' });
   }
 };
 
