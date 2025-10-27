@@ -1197,51 +1197,53 @@ app.delete('/api/admin/exams/:id', async (req, res) => {
 });
 
 // Student exam endpoints
-app.get('/api/student/exams', requireAuth, async (req, res) => {
-  try {
-    console.log('Fetching student exams for user:', req.user.id);
-    
-    const exams = await Exam.find({ isActive: true })
-      .populate('questions')
-      .sort({ createdAt: -1 });
-    
-    console.log('Found exams:', exams.length);
-    console.log('Exam details:', exams.map(exam => ({
-      id: exam._id,
-      title: exam.title,
-      examType: exam.examType,
-      isActive: exam.isActive,
-      questionsCount: exam.questions.length
-    })));
-    
-    res.json(exams);
-  } catch (error) {
-    console.error('Failed to fetch student exams:', error);
-    res.status(500).json({ message: 'Failed to fetch exams', error: error.message });
-  }
-});
+// This route is now handled by student.js with proper multi-tenant filtering
+// app.get('/api/student/exams', requireAuth, async (req, res) => {
+//   try {
+//     console.log('Fetching student exams for user:', req.user.id);
+//     
+//     const exams = await Exam.find({ isActive: true })
+//       .populate('questions')
+//       .sort({ createdAt: -1 });
+//     
+//     console.log('Found exams:', exams.length);
+//     console.log('Exam details:', exams.map(exam => ({
+//       id: exam._id,
+//       title: exam.title,
+//       examType: exam.examType,
+//       isActive: exam.isActive,
+//       questionsCount: exam.questions.length
+//     })));
+//     
+//     res.json(exams);
+//   } catch (error) {
+//     console.error('Failed to fetch student exams:', error);
+//     res.status(500).json({ message: 'Failed to fetch exams', error: error.message });
+//   }
+// });
 
-app.get('/api/student/exams/:examId', requireAuth, async (req, res) => {
-  try {
-    const { examId } = req.params;
-    
-    if (!mongoose.Types.ObjectId.isValid(examId)) {
-      return res.status(400).json({ message: 'Invalid exam ID format' });
-    }
-    
-    const exam = await Exam.findById(examId)
-      .populate('questions');
-    
-    if (!exam) {
-      return res.status(404).json({ message: 'Exam not found' });
-    }
-    
-    res.json(exam);
-  } catch (error) {
-    console.error('Failed to fetch exam:', error);
-    res.status(500).json({ message: 'Failed to fetch exam' });
-  }
-});
+// This route is now handled by student.js with proper multi-tenant filtering
+// app.get('/api/student/exams/:examId', requireAuth, async (req, res) => {
+//   try {
+//     const { examId } = req.params;
+//     
+//     if (!mongoose.Types.ObjectId.isValid(examId)) {
+//       return res.status(400).json({ message: 'Invalid exam ID format' });
+//     }
+//     
+//     const exam = await Exam.findById(examId)
+//       .populate('questions');
+//     
+//     if (!exam) {
+//       return res.status(404).json({ message: 'Exam not found' });
+//     }
+//     
+//     res.json(exam);
+//   } catch (error) {
+//     console.error('Failed to fetch exam:', error);
+//     res.status(500).json({ message: 'Failed to fetch exam' });
+//   }
+// });
 
 // Save exam results
 app.post('/api/student/exam-results', requireAuth, async (req, res) => {
@@ -1968,29 +1970,30 @@ app.get('/api/student/content', async (req, res) => {
   }
 });
 
-app.get('/api/student/videos', async (req, res) => {
-  try {
-    const videos = await Video.find({ isPublished: true })
-      .populate('createdBy', 'fullName')
-      .sort({ createdAt: -1 });
-    res.json(videos);
-  } catch (error) {
-    console.error('Failed to fetch student videos:', error);
-    res.status(500).json({ message: 'Failed to fetch videos' });
-  }
-});
+// These routes are now handled by student.js with proper multi-tenant filtering
+// app.get('/api/student/videos', async (req, res) => {
+//   try {
+//     const videos = await Video.find({ isPublished: true })
+//       .populate('createdBy', 'fullName')
+//       .sort({ createdAt: -1 });
+//     res.json(videos);
+//   } catch (error) {
+//     console.error('Failed to fetch student videos:', error);
+//     res.status(500).json({ message: 'Failed to fetch videos' });
+//   }
+// });
 
-app.get('/api/student/assessments', async (req, res) => {
-  try {
-    const assessments = await Assessment.find({ isPublished: true })
-      .populate('createdBy', 'fullName')
-      .sort({ createdAt: -1 });
-    res.json(assessments);
-  } catch (error) {
-    console.error('Failed to fetch student assessments:', error);
-    res.status(500).json({ message: 'Failed to fetch assessments' });
-  }
-});
+// app.get('/api/student/assessments', async (req, res) => {
+//   try {
+//     const assessments = await Assessment.find({ isPublished: true })
+//       .populate('createdBy', 'fullName')
+//       .sort({ createdAt: -1 });
+//     res.json(assessments);
+//   } catch (error) {
+//     console.error('Failed to fetch student assessments:', error);
+//     res.status(500).json({ message: 'Failed to fetch assessments' });
+//   }
+// });
 
 app.get('/api/student/quizzes', async (req, res) => {
   try {
