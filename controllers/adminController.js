@@ -827,8 +827,11 @@ export const createQuestion = async (req, res) => {
     
     await newQuestion.save();
     
-    // Add question to exam
-    await Exam.findByIdAndUpdate(examId, { $push: { questions: newQuestion._id } });
+    // Add question to exam and update totalQuestions count
+    await Exam.findByIdAndUpdate(examId, { 
+      $push: { questions: newQuestion._id },
+      $inc: { totalQuestions: 1 }
+    });
     
     res.status(201).json({
       success: true,
@@ -897,8 +900,11 @@ export const deleteQuestion = async (req, res) => {
       });
     }
     
-    // Remove question from exam
-    await Exam.findByIdAndUpdate(deletedQuestion.exam, { $pull: { questions: questionId } });
+    // Remove question from exam and decrement totalQuestions count
+    await Exam.findByIdAndUpdate(deletedQuestion.exam, { 
+      $pull: { questions: questionId },
+      $inc: { totalQuestions: -1 }
+    });
     
     res.json({
       success: true,
