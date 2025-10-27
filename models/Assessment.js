@@ -79,6 +79,11 @@ const assessmentSchema = new mongoose.Schema({
   isDriveQuiz: {
     type: Boolean,
     default: false
+  },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   }
 }, {
   timestamps: true
@@ -89,5 +94,6 @@ assessmentSchema.index({ subjectIds: 1 });
 assessmentSchema.index({ difficulty: 1 });
 assessmentSchema.index({ isPublished: 1 });
 assessmentSchema.index({ createdAt: -1 });
+assessmentSchema.index({ adminId: 1 }); // Multi-tenant index
 
 export default mongoose.model('Assessment', assessmentSchema);

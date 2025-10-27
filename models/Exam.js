@@ -48,6 +48,11 @@ const examSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   questions: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Question'
@@ -67,5 +72,11 @@ examSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Indexes for better performance
+examSchema.index({ adminId: 1 }); // Multi-tenant index
+examSchema.index({ examType: 1 });
+examSchema.index({ isActive: 1 });
+examSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Exam', examSchema);

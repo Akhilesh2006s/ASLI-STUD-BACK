@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['student', 'admin'],
+    enum: ['student', 'teacher', 'admin', 'super-admin'],
     default: 'student'
   },
   isActive: {
@@ -36,6 +36,19 @@ const userSchema = new mongoose.Schema({
   phone: {
     type: String,
     default: ''
+  },
+  permissions: {
+    type: [String],
+    default: []
+  },
+  details: {
+    type: String,
+    default: ''
+  },
+  assignedAdmin: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
   }
 }, {
   timestamps: true
@@ -43,5 +56,7 @@ const userSchema = new mongoose.Schema({
 
 // Index for better performance
 userSchema.index({ role: 1 });
+userSchema.index({ assignedAdmin: 1 });
+userSchema.index({ role: 1, assignedAdmin: 1 }); // Compound index for role + admin queries
 
 export default mongoose.model('User', userSchema);

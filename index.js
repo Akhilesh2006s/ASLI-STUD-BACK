@@ -20,6 +20,11 @@ import UserProgress from './models/UserProgress.js';
 import Exam from './models/Exam.js';
 import Question from './models/Question.js';
 
+// Import routes
+import superAdminRoutes from './routes/superAdmin.js';
+import adminRoutes from './routes/admin.js';
+import studentRoutes from './routes/student.js';
+
 // Load environment variables
 dotenv.config();
 
@@ -141,6 +146,11 @@ app.options('/api/*', (req, res) => {
   res.header('Access-Control-Expose-Headers', 'Set-Cookie');
   res.sendStatus(200);
 });
+
+// Mount routes
+app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/student', studentRoutes);
 
 // Serve static files
 app.use('/uploads', express.static('uploads'));
@@ -289,8 +299,9 @@ const requireAuth = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-jwt-secret');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
+    req.isAuthenticated = () => true; // Add this for compatibility
     console.log('JWT Auth successful:', decoded);
     next();
   } catch (error) {
@@ -303,16 +314,14 @@ const requireAuth = (req, res, next) => {
 const requireAdmin = (req, res, next) => {
   console.log('Admin check:', req.isAuthenticated(), req.user ? req.user.role : 'No user');
   
-  // For development, allow access if user is authenticated (temporary bypass)
-  if (process.env.NODE_ENV === 'development' && req.isAuthenticated()) {
-    console.log('Development mode: Allowing admin access for authenticated user');
+  // Check if user is authenticated and has admin role
+  if (req.isAuthenticated() && req.user && req.user.role === 'admin') {
+    console.log('Admin access granted');
     return next();
   }
   
-  if (req.isAuthenticated() && req.user.role === 'admin') {
-    return next();
-  }
-  res.status(403).json({ message: 'Access denied' });
+  console.log('Admin access denied');
+  res.status(403).json({ message: 'Admin access required' });
 };
 
 // Routes
@@ -371,6 +380,32 @@ app.options('/api/auth/login', (req, res) => {
 app.post('/api/auth/login', (req, res, next) => {
   console.log('Login attempt:', { email: req.body.email, timestamp: new Date().toISOString() });
   
+  // Check for Super Admin credentials first
+  if (req.body.email === 'Amenity@gmail.com' && req.body.password === 'Amenity') {
+    console.log('Super Admin login detected');
+    const token = jwt.sign(
+      { 
+        id: 'super-admin-001',
+        email: 'Amenity@gmail.com',
+        fullName: 'Super Admin',
+        role: 'super-admin'
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+    
+    return res.json({
+      success: true,
+      token,
+      user: {
+        id: 'super-admin-001',
+        email: 'Amenity@gmail.com',
+        fullName: 'Super Admin',
+        role: 'super-admin'
+      }
+    });
+  }
+  
   passport.authenticate('local', async (err, user, info) => {
     if (err) {
       console.error('Login error:', err);
@@ -420,7 +455,7 @@ app.post('/api/auth/login', (req, res, next) => {
           email: user.email, 
           role: user.role 
         },
-        process.env.JWT_SECRET || 'your-jwt-secret',
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
 
@@ -718,7 +753,21 @@ app.delete('/api/admin/assessments/:id', async (req, res) => {
 // Admin user management
 app.get('/api/admin/users', async (req, res) => {
   try {
-    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
+    // Only return students assigned to this admin
+    const users = await User.find({ 
+      role: 'student',
+      assignedAdmin: adminId 
+    }).select('-password').sort({ createdAt: -1 });
+    
     res.json(users);
   } catch (error) {
     console.error('Failed to fetch users:', error);
@@ -728,6 +777,15 @@ app.get('/api/admin/users', async (req, res) => {
 
 app.post('/api/admin/users', async (req, res) => {
   try {
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
     const { email, password, fullName, role = 'student', isActive = true } = req.body;
     
     // Check if user already exists
@@ -739,13 +797,14 @@ app.post('/api/admin/users', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
+    // Create user and assign to this admin
     const newUser = new User({
       email,
       password: hashedPassword,
       fullName,
       role,
-      isActive
+      isActive,
+      assignedAdmin: adminId  // Assign to the logged-in admin
     });
 
     await newUser.save();
@@ -755,7 +814,8 @@ app.post('/api/admin/users', async (req, res) => {
       email: newUser.email,
       fullName: newUser.fullName,
       role: newUser.role,
-      isActive: newUser.isActive
+      isActive: newUser.isActive,
+      assignedAdmin: newUser.assignedAdmin
     });
   } catch (error) {
     console.error('Failed to create user:', error);
@@ -809,7 +869,17 @@ app.delete('/api/admin/users/delete-all', async (req, res) => {
 // Teacher management endpoints
 app.get('/api/admin/teachers', async (req, res) => {
   try {
-    const teachers = await Teacher.find().populate('subjects').select('-password').sort({ createdAt: -1 });
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
+    // Only return teachers assigned to this admin
+    const teachers = await Teacher.find({ adminId }).populate('subjects').select('-password').sort({ createdAt: -1 });
     res.json(teachers);
   } catch (error) {
     console.error('Failed to fetch teachers:', error);
@@ -819,6 +889,15 @@ app.get('/api/admin/teachers', async (req, res) => {
 
 app.post('/api/admin/teachers', async (req, res) => {
   try {
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
     const { email, password, fullName, phone, department, qualifications, subjects } = req.body;
     
     // Check if teacher already exists
@@ -830,7 +909,7 @@ app.post('/api/admin/teachers', async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
 
-    // Create new teacher
+    // Create new teacher and assign to this admin
     const newTeacher = new Teacher({
       email,
       password: hashedPassword,
@@ -840,7 +919,8 @@ app.post('/api/admin/teachers', async (req, res) => {
       qualifications,
       subjects: subjects || [],
       role: 'teacher',
-      isActive: true
+      isActive: true,
+      adminId: adminId  // Assign to the logged-in admin
     });
 
     await newTeacher.save();
@@ -2151,6 +2231,16 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+    console.log('Admin ID for CSV upload:', adminId);
+
     // Convert buffer to string
     const csvData = req.file.buffer.toString('utf8');
     
@@ -2212,7 +2302,7 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
         // Get class number from the class field (handles both classnumber and classNumber)
         const classNumber = userData.classnumber || 'Unassigned';
 
-        // Create new user
+        // Create new user and assign to the logged-in admin
         const newUser = new User({
           fullName: userData.name,
           email: userData.email,
@@ -2220,7 +2310,8 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
           phone: userData.phone,
           password: hashedPassword,
           role: 'student',
-          isActive: true
+          isActive: true,
+          assignedAdmin: adminId  // Assign to the logged-in admin
         });
 
         await newUser.save();
@@ -2251,8 +2342,20 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
 // Classes endpoint - returns classes based on student data
 app.get('/api/admin/classes', async (req, res) => {
   try {
-    // Get all students to group by class
-    const students = await User.find({ role: 'student' }).select('fullName email classNumber phone isActive createdAt lastLogin');
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
+    // Get only students assigned to this admin
+    const students = await User.find({ 
+      role: 'student',
+      assignedAdmin: adminId 
+    }).select('fullName email classNumber phone isActive createdAt lastLogin');
     
     // Group students by class
     const classMap = new Map();
@@ -2514,16 +2617,7 @@ app.patch('/api/videos/:id/toggle', async (req, res) => {
   }
 });
 
-// Admin Assessments endpoints
-app.get('/api/assessments', async (req, res) => {
-  try {
-    const assessments = await Assessment.find({ isPublished: true }).sort({ createdAt: -1 });
-    res.json(assessments);
-  } catch (error) {
-    console.error('Failed to fetch assessments:', error);
-    res.status(500).json({ message: 'Failed to fetch assessments' });
-  }
-});
+// Duplicate assessments GET route removed - handled above
 
 app.post('/api/assessments', async (req, res) => {
   try {
@@ -2903,6 +2997,377 @@ app.get('/api/debug/current-session', (req, res) => {
       role: req.user.role
     } : null
   });
+});
+
+// Super Admin Authentication
+app.post('/api/super-admin/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    // Check super admin credentials
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+      const token = jwt.sign(
+        { 
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
+          role: 'super-admin'
+        },
+        process.env.JWT_SECRET || 'your-secret-key',
+        { expiresIn: '24h' }
+      );
+      
+      res.json({
+        success: true,
+        token,
+        user: {
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
+          role: 'super-admin'
+        }
+      });
+    } else {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+  } catch (error) {
+    console.error('Super admin login error:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Super Admin Dashboard Stats
+app.get('/api/super-admin/stats', async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalTeachers = await Teacher.countDocuments();
+    const totalVideos = await Video.countDocuments();
+    const totalAssessments = await Assessment.countDocuments();
+    
+    // Calculate revenue (mock data for now)
+    const revenue = 245678;
+    
+    res.json({
+      totalUsers,
+      revenue,
+      courses: totalVideos,
+      teachers: totalTeachers,
+      admins: 5, // Mock data
+      superAdmins: 1
+    });
+  } catch (error) {
+    console.error('Stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+});
+
+// Get all admins with enhanced data
+app.get('/api/super-admin/admins', async (req, res) => {
+  try {
+    const admins = await User.find({ role: 'admin' }).select('-password');
+    
+    // Get student and teacher counts for each admin
+    const adminsWithCounts = await Promise.all(admins.map(async (admin) => {
+      // Count students assigned to this admin
+      const studentCount = await User.countDocuments({ 
+        role: 'student',
+        assignedAdmin: admin._id
+      });
+      
+      // Count teachers assigned to this admin
+      const teacherCount = await Teacher.countDocuments({
+        adminId: admin._id
+      });
+
+      return {
+        id: admin._id,
+        name: admin.fullName || admin.name,
+        email: admin.email,
+        totalStudents: studentCount,
+        totalTeachers: teacherCount,
+        createdAt: admin.createdAt,
+        status: admin.isActive !== false ? 'active' : 'inactive'
+      };
+    }));
+
+    res.json({
+      success: true,
+      data: adminsWithCounts
+    });
+  } catch (error) {
+    console.error('Error fetching admins:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch admins',
+      error: error.message
+    });
+  }
+});
+
+// Create new admin
+app.post('/api/super-admin/admins', async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+    
+    // Validate input
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, email, and password are required'
+      });
+    }
+
+    // Check if admin already exists
+    const existingAdmin = await User.findOne({ email });
+    if (existingAdmin) {
+      return res.status(400).json({
+        success: false,
+        message: 'Admin with this email already exists'
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create new admin
+    const newAdmin = new User({
+      fullName: name,
+      email: email,
+      password: hashedPassword,
+      role: 'admin',
+      isActive: true
+    });
+
+    await newAdmin.save();
+
+    // Return admin without password
+    const adminResponse = {
+      id: newAdmin._id,
+      name: newAdmin.fullName,
+      email: newAdmin.email,
+      totalStudents: 0,
+      totalTeachers: 0,
+      createdAt: newAdmin.createdAt,
+      status: 'active'
+    };
+
+    res.status(201).json({
+      success: true,
+      data: adminResponse,
+      message: 'Admin created successfully'
+    });
+  } catch (error) {
+    console.error('Error creating admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create admin',
+      error: error.message
+    });
+  }
+});
+
+// Delete admin
+app.delete('/api/super-admin/admins/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedAdmin = await User.findByIdAndDelete(id);
+
+    if (!deletedAdmin) {
+      return res.status(404).json({
+        success: false,
+        message: 'Admin not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Admin deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting admin:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete admin',
+      error: error.message
+    });
+  }
+});
+
+// Get all users
+app.get('/api/super-admin/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password').sort({ createdAt: -1 });
+    res.json(users);
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch users' });
+  }
+});
+
+// Create new user
+app.post('/api/super-admin/users', async (req, res) => {
+  try {
+    const { name, email, role, details } = req.body;
+    
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User already exists' });
+    }
+    
+    // Create new user
+    const hashedPassword = await bcrypt.hash('password123', 10); // Default password
+    const newUser = new User({
+      fullName: name,
+      email,
+      password: hashedPassword,
+      role: role,
+      details: details,
+      isActive: true
+    });
+    
+    await newUser.save();
+    
+    res.json({
+      success: true,
+      message: 'User created successfully',
+      user: {
+        id: newUser._id,
+        name: newUser.fullName,
+        email: newUser.email,
+        role: newUser.role,
+        details: newUser.details,
+        status: 'Active',
+        joinDate: newUser.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create user' });
+  }
+});
+
+// Get all courses/videos
+app.get('/api/super-admin/courses', async (req, res) => {
+  try {
+    const courses = await Video.find().populate('teacher', 'fullName').sort({ createdAt: -1 });
+    res.json(courses);
+  } catch (error) {
+    console.error('Get courses error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch courses' });
+  }
+});
+
+// Create new course
+app.post('/api/super-admin/courses', async (req, res) => {
+  try {
+    const { title, subject, grade, board, teacher } = req.body;
+    
+    // Find teacher by name
+    const teacherUser = await User.findOne({ fullName: teacher, role: 'teacher' });
+    if (!teacherUser) {
+      return res.status(400).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    const newCourse = new Video({
+      title: title,
+      subject: subject,
+      grade: grade,
+      board: board,
+      teacher: teacherUser._id,
+      description: `${subject} course for ${grade} - ${board}`,
+      isPublished: true
+    });
+    
+    await newCourse.save();
+    
+    res.json({
+      success: true,
+      message: 'Course created successfully',
+      course: {
+        id: newCourse._id,
+        title: newCourse.title,
+        subject: newCourse.subject,
+        grade: newCourse.grade,
+        board: newCourse.board,
+        teacher: teacherUser.fullName,
+        status: 'Published',
+        created: newCourse.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create course error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create course' });
+  }
+});
+
+// Get analytics data
+app.get('/api/super-admin/analytics', async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalTeachers = await Teacher.countDocuments();
+    const totalVideos = await Video.countDocuments();
+    
+    // Calculate daily active users (mock data)
+    const dailyActive = Math.floor(totalUsers * 0.1);
+    const weeklyActive = Math.floor(totalUsers * 0.3);
+    const monthlyActive = Math.floor(totalUsers * 0.7);
+    
+    res.json({
+      dailyActive,
+      weeklyActive,
+      monthlyActive,
+      avgSessionTime: "24m 35s",
+      completionRate: 76,
+      revenueGrowth: 23.5,
+      userGrowth: 18.2,
+      courseEngagement: 89
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch analytics' });
+  }
+});
+
+// Get subscriptions data
+app.get('/api/super-admin/subscriptions', async (req, res) => {
+  try {
+    // Mock subscription data for now
+    const subscriptions = [
+      { id: 1, user: "Rahul Sharma", plan: "Premium", amount: 999, status: "Active", nextBilling: "2024-09-15", paymentMethod: "Credit Card" },
+      { id: 2, user: "Amit Kumar", plan: "Basic", amount: 499, status: "Active", nextBilling: "2024-09-20", paymentMethod: "UPI" },
+      { id: 3, user: "Kavya Reddy", plan: "Premium", amount: 999, status: "Cancelled", nextBilling: "-", paymentMethod: "Net Banking" },
+      { id: 4, user: "Arjun Patel", plan: "Pro", amount: 1499, status: "Active", nextBilling: "2024-09-18", paymentMethod: "Debit Card" },
+      { id: 5, user: "Sneha Jain", plan: "Basic", amount: 499, status: "Pending", nextBilling: "2024-09-12", paymentMethod: "UPI" }
+    ];
+    
+    res.json(subscriptions);
+  } catch (error) {
+    console.error('Subscriptions error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch subscriptions' });
+  }
+});
+
+// Export data
+app.get('/api/super-admin/export', async (req, res) => {
+  try {
+    const users = await User.find().select('-password');
+    const videos = await Video.find();
+    const teachers = await Teacher.find();
+    
+    const exportData = {
+      users: users,
+      videos: videos,
+      teachers: teachers,
+      exportDate: new Date().toISOString()
+    };
+    
+    res.json(exportData);
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to export data' });
+  }
 });
 
 app.listen(PORT, () => {

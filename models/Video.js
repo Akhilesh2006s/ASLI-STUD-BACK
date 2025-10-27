@@ -54,6 +54,11 @@ const videoSchema = new mongoose.Schema({
   isYouTubeVideo: {
     type: Boolean,
     default: false
+  },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   }
 }, {
   timestamps: true
@@ -64,5 +69,6 @@ videoSchema.index({ subjectId: 1 });
 videoSchema.index({ difficulty: 1 });
 videoSchema.index({ isPublished: 1 });
 videoSchema.index({ createdAt: -1 });
+videoSchema.index({ adminId: 1 }); // Multi-tenant index
 
 export default mongoose.model('Video', videoSchema);

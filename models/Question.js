@@ -54,6 +54,11 @@ const questionSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -81,5 +86,12 @@ questionSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
   next();
 });
+
+// Indexes for better performance
+questionSchema.index({ adminId: 1 }); // Multi-tenant index
+questionSchema.index({ exam: 1 });
+questionSchema.index({ subject: 1 });
+questionSchema.index({ isActive: 1 });
+questionSchema.index({ createdAt: -1 });
 
 export default mongoose.model('Question', questionSchema);

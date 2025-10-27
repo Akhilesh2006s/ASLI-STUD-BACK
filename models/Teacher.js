@@ -44,6 +44,11 @@ const teacherSchema = new mongoose.Schema({
   qualifications: {
     type: String,
     default: ''
+  },
+  adminId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   }
 }, {
   timestamps: true
@@ -52,6 +57,9 @@ const teacherSchema = new mongoose.Schema({
 // Index for better performance
 teacherSchema.index({ role: 1 });
 teacherSchema.index({ subjects: 1 });
+teacherSchema.index({ adminId: 1 });
 
 export default mongoose.model('Teacher', teacherSchema);
+
+
 
