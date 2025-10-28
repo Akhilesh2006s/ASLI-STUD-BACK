@@ -6,7 +6,8 @@ import {
   extractTeacherId
 } from '../middleware/auth.js';
 import {
-  getTeacherDashboardStats
+  getTeacherDashboardStats,
+  testTeacherData
 } from '../controllers/adminController.js';
 import {
   createLessonPlan,
@@ -36,6 +37,7 @@ router.use(extractTeacherId);
 
 // Teacher Dashboard Routes
 router.get('/dashboard', getTeacherDashboardStats);
+router.get('/test', testTeacherData);
 
 // AI Tools Routes
 router.post('/ai/lesson-plan', createLessonPlan);

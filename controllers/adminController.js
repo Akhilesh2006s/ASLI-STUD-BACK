@@ -930,8 +930,42 @@ export const deleteQuestion = async (req, res) => {
   }
 };
 
-// Teacher Dashboard Stats
-export const getTeacherDashboardStats = async (req, res) => {
+// Test endpoint to debug teacher data
+export const testTeacherData = async (req, res) => {
+  try {
+    console.log('Test teacher data request received');
+    console.log('req.teacherId:', req.teacherId);
+    console.log('req.user:', req.user);
+    
+    const teacherId = req.teacherId;
+    
+    if (!teacherId) {
+      return res.status(400).json({ success: false, message: 'No teacherId found' });
+    }
+    
+    // Get teacher data
+    const teacher = await Teacher.findById(teacherId).populate('subjects');
+    console.log('Teacher found:', teacher);
+    
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    res.json({
+      success: true,
+      teacher: {
+        id: teacher._id,
+        email: teacher.email,
+        fullName: teacher.fullName,
+        assignedClassIds: teacher.assignedClassIds,
+        subjects: teacher.subjects
+      }
+    });
+  } catch (error) {
+    console.error('Test teacher data error:', error);
+    res.status(500).json({ success: false, message: 'Test failed', error: error.message });
+  }
+};
   try {
     console.log('Teacher dashboard request received');
     console.log('req.teacherId:', req.teacherId);
