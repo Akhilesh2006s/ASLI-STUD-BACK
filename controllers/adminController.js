@@ -961,24 +961,40 @@ export const getTeacherDashboardStats = async (req, res) => {
       ? examResults.reduce((sum, result) => sum + result.score, 0) / examResults.length 
       : 0;
 
-    // Get recent activity
-    const recentActivity = [
-      {
-        action: 'New video uploaded',
-        time: '2 hours ago',
+    // Get recent activity from real data
+    const recentActivity = [];
+    
+    // Add recent video uploads
+    const recentVideos = videos
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 3)
+      .map(video => ({
+        action: `Video uploaded: ${video.title}`,
+        time: new Date(video.createdAt).toLocaleDateString(),
         type: 'video'
-      },
-      {
-        action: 'Assessment created',
-        time: '4 hours ago',
+      }));
+    
+    // Add recent assessments
+    const recentAssessments = assessments
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 2)
+      .map(assessment => ({
+        action: `Assessment created: ${assessment.title}`,
+        time: new Date(assessment.createdAt).toLocaleDateString(),
         type: 'assessment'
-      },
-      {
-        action: 'Student completed exam',
-        time: '6 hours ago',
+      }));
+    
+    // Add recent exam completions
+    const recentExams = examResults
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 2)
+      .map(result => ({
+        action: `Student completed exam (Score: ${result.score}%)`,
+        time: new Date(result.createdAt).toLocaleDateString(),
         type: 'exam'
-      }
-    ];
+      }));
+    
+    recentActivity.push(...recentVideos, ...recentAssessments, ...recentExams);
 
     res.json({
       success: true,
@@ -990,21 +1006,31 @@ export const getTeacherDashboardStats = async (req, res) => {
           totalAssessments: assessments.length,
           averagePerformance: Math.round(averagePerformance)
         },
-        students: students.map(student => ({
-          id: student._id,
-          name: student.fullName,
-          email: student.email,
-          classNumber: student.classNumber,
-          performance: Math.floor(Math.random() * 40) + 60, // Mock data
-          lastExamScore: Math.floor(Math.random() * 40) + 60,
-          totalExams: Math.floor(Math.random() * 10) + 1
+        students: await Promise.all(students.map(async (student) => {
+          // Get real exam results for this student
+          const studentExamResults = await ExamResult.find({ studentId: student._id });
+          const totalExams = studentExamResults.length;
+          const lastExamScore = totalExams > 0 ? studentExamResults[studentExamResults.length - 1].score : 0;
+          const averagePerformance = totalExams > 0 
+            ? Math.round(studentExamResults.reduce((sum, result) => sum + result.score, 0) / totalExams)
+            : 0;
+
+          return {
+            id: student._id,
+            name: student.fullName,
+            email: student.email,
+            classNumber: student.classNumber,
+            performance: averagePerformance,
+            lastExamScore: lastExamScore,
+            totalExams: totalExams
+          };
         })),
         videos: videos.map(video => ({
           id: video._id,
           title: video.title,
           subject: video.subject,
           duration: video.duration,
-          views: Math.floor(Math.random() * 1000) + 100,
+          views: video.views || 0,
           createdAt: video.createdAt
         })),
         assessments: assessments.map(assessment => ({
@@ -1012,8 +1038,8 @@ export const getTeacherDashboardStats = async (req, res) => {
           title: assessment.title,
           subject: assessment.subject,
           questions: assessment.questions?.length || 0,
-          attempts: Math.floor(Math.random() * 50) + 10,
-          averageScore: Math.floor(Math.random() * 30) + 70,
+          attempts: assessment.attempts || 0,
+          averageScore: assessment.averageScore || 0,
           createdAt: assessment.createdAt
         })),
         recentActivity
