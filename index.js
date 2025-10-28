@@ -923,8 +923,29 @@ app.get('/api/admin/teachers', async (req, res) => {
     const adminId = decoded.userId;
 
     // Only return teachers assigned to this admin
-    const teachers = await Teacher.find({ adminId }).populate('subjects').select('-password').sort({ createdAt: -1 });
-    res.json(teachers);
+    const teachers = await Teacher.find({ adminId })
+      .populate('subjects')
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    // Transform the data to include assignedClassIds
+    const transformedTeachers = teachers.map(teacher => ({
+      _id: teacher._id,
+      id: teacher._id,
+      fullName: teacher.fullName,
+      email: teacher.email,
+      phone: teacher.phone,
+      department: teacher.department,
+      qualifications: teacher.qualifications,
+      subjects: teacher.subjects || [],
+      assignedClassIds: teacher.assignedClassIds || [],
+      role: teacher.role,
+      isActive: teacher.isActive,
+      createdAt: teacher.createdAt,
+      updatedAt: teacher.updatedAt
+    }));
+    
+    res.json(transformedTeachers);
   } catch (error) {
     console.error('Failed to fetch teachers:', error);
     res.status(500).json({ message: 'Failed to fetch teachers' });
