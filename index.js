@@ -3597,40 +3597,33 @@ app.post('/api/teacher/videos-working', async (req, res) => {
   }
 });
 
-// Teacher video creation using admin logic
+// Teacher video creation using EXACT admin logic
 app.post('/api/teacher-videos-admin-style', async (req, res) => {
   try {
-    console.log('=== TEACHER VIDEO ADMIN STYLE ===');
+    console.log('=== TEACHER VIDEO EXACT ADMIN STYLE ===');
     console.log('Body:', req.body);
     
     const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
-    // Use exact same logic as admin video creation
+    // Use EXACT same logic as admin video creation - no modifications
     const newVideo = new Video({
       title,
       description,
       videoUrl: videoUrl || '',
-      thumbnailUrl: '', // Empty for now
-      duration: parseInt(duration) * 60, // Convert minutes to seconds
+      thumbnailUrl: '', // Empty like admin
+      duration: parseInt(duration), // NO conversion - exact like admin
       subjectId: subject,
-      difficulty: difficulty || 'beginner',
-      youtubeUrl: videoUrl || '',
-      isYouTubeVideo: !!videoUrl,
-      isPublished: true
-      // No createdBy or adminId - just like admin videos
+      difficulty: difficulty || 'beginner'
+      // NO youtubeUrl, isYouTubeVideo, isPublished - exact like admin
     });
     
     await newVideo.save();
     console.log('Teacher video created successfully:', newVideo._id);
     
-    res.status(201).json({
-      success: true,
-      message: 'Video created successfully',
-      data: newVideo
-    });
+    res.status(201).json(newVideo); // Exact same response as admin
   } catch (error) {
     console.error('Teacher video creation error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
+    res.status(500).json({ message: 'Failed to create video' }); // Exact same error response
   }
 });
 
