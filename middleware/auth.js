@@ -51,6 +51,7 @@ export const extractTeacherId = (req, res, next) => {
   if (req.user.role === 'teacher') {
     req.teacherId = req.userId;
     console.log('Set req.teacherId to:', req.teacherId);
+    console.log('Teacher ID type:', typeof req.teacherId);
   } else {
     console.log('User role is not teacher:', req.user.role);
     return res.status(403).json({ success: false, message: 'Access denied. Teacher privileges required.' });
