@@ -3504,6 +3504,43 @@ app.get('/api/super-admin/export', async (req, res) => {
   }
 });
 
+// Direct video creation endpoint for testing
+app.post('/api/test-video', async (req, res) => {
+  try {
+    console.log('=== DIRECT VIDEO TEST ===');
+    console.log('Body:', req.body);
+    
+    const { title, description, subject, duration, videoUrl } = req.body;
+    
+    const testVideo = new Video({
+      title: title || 'Direct Test Video',
+      description: description || 'Test Description',
+      subjectId: subject || 'test',
+      duration: parseInt(duration) * 60 || 3600,
+      videoUrl: videoUrl || 'https://test.com',
+      youtubeUrl: videoUrl || 'https://test.com',
+      isYouTubeVideo: true,
+      difficulty: 'beginner',
+      createdBy: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      isPublished: true
+    });
+    
+    console.log('Direct test video object:', testVideo);
+    await testVideo.save();
+    console.log('Direct test video saved successfully:', testVideo._id);
+    
+    res.json({ success: true, message: 'Direct test video created', data: testVideo });
+  } catch (error) {
+    console.error('=== DIRECT TEST VIDEO ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error name:', error.name);
+    console.error('Error stack:', error.stack);
+    console.error('Full error:', error);
+    res.status(500).json({ success: false, message: 'Direct test failed', error: error.message, details: error });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
