@@ -3597,7 +3597,7 @@ app.post('/api/teacher/videos-working', async (req, res) => {
   }
 });
 
-// Teacher video creation using EXACT admin logic
+// Teacher video creation using EXACT admin logic - visible to ALL students
 app.post('/api/teacher-videos-admin-style', async (req, res) => {
   try {
     console.log('=== TEACHER VIDEO EXACT ADMIN STYLE ===');
@@ -3605,7 +3605,7 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
     
     const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
-    // Use EXACT same logic as admin video creation - no modifications
+    // Use EXACT same logic as admin video creation - teachers act as admins
     const newVideo = new Video({
       title,
       description,
@@ -3613,8 +3613,9 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
       thumbnailUrl: '', // Empty like admin
       duration: parseInt(duration), // NO conversion - exact like admin
       subjectId: subject,
-      difficulty: difficulty || 'beginner'
-      // NO youtubeUrl, isYouTubeVideo, isPublished - exact like admin
+      difficulty: difficulty || 'beginner',
+      isPublished: true, // Make visible to ALL students
+      adminId: null // Teachers act as admins, no adminId needed
     });
     
     await newVideo.save();
@@ -3624,6 +3625,43 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
   } catch (error) {
     console.error('Teacher video creation error:', error);
     res.status(500).json({ message: 'Failed to create video' }); // Exact same error response
+  }
+});
+
+// Teacher assessment creation using EXACT admin logic - visible to ALL students
+app.post('/api/teacher-assessments-admin-style', async (req, res) => {
+  try {
+    console.log('=== TEACHER ASSESSMENT EXACT ADMIN STYLE ===');
+    console.log('Body:', req.body);
+    
+    const { title, description, questions, subject, duration, difficulty } = req.body;
+    
+    // Convert single subject to subjectIds array (like admin)
+    const subjectIds = Array.isArray(subject) ? subject : [subject];
+    
+    // Calculate total points (exact like admin)
+    const totalPoints = questions.reduce((sum, q) => sum + (q.points || 1), 0);
+    
+    // Use EXACT same logic as admin assessment creation
+    const newAssessment = new Assessment({
+      title,
+      description,
+      questions,
+      subjectIds,
+      difficulty: difficulty || 'beginner',
+      duration: parseInt(duration),
+      totalPoints,
+      isPublished: true, // Make visible to ALL students
+      adminId: null // Teachers act as admins, no adminId needed
+    });
+    
+    await newAssessment.save();
+    console.log('Teacher assessment created successfully:', newAssessment._id);
+    
+    res.status(201).json(newAssessment); // Exact same response as admin
+  } catch (error) {
+    console.error('Teacher assessment creation error:', error);
+    res.status(500).json({ message: 'Failed to create assessment' }); // Exact same error response
   }
 });
 
