@@ -197,14 +197,27 @@ export const getTeachers = async (req, res) => {
     const filter = adminId ? { adminId } : {};
     
     const teachers = await Teacher.find(filter)
-      .populate('subjects', 'name')
+      .populate('subjects', 'name description')
       .select('-password')
       .sort({ createdAt: -1 });
     
-    res.json({
-      success: true,
-      data: teachers
-    });
+    // Transform the data to match frontend expectations
+    const transformedTeachers = teachers.map(teacher => ({
+      _id: teacher._id,
+      id: teacher._id,
+      fullName: teacher.fullName,
+      email: teacher.email,
+      phone: teacher.phone,
+      department: teacher.department,
+      qualifications: teacher.qualifications,
+      subjects: teacher.subjects || [],
+      role: teacher.role,
+      isActive: teacher.isActive,
+      createdAt: teacher.createdAt,
+      updatedAt: teacher.updatedAt
+    }));
+    
+    res.json(transformedTeachers);
   } catch (error) {
     console.error('Get teachers error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch teachers' });
@@ -910,8 +923,57 @@ export const deleteQuestion = async (req, res) => {
       success: true,
       message: 'Question deleted successfully'
     });
+// Assign subjects to teacher
+export const assignSubjects = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { subjectIds } = req.body;
+    const adminId = req.adminId;
+
+    console.log('Assign subjects request:', { teacherId, subjectIds, adminId });
+
+    if (!teacherId || !subjectIds || !Array.isArray(subjectIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Teacher ID and subject IDs array are required'
+      });
+    }
+
+    // Find the teacher
+    const teacher = await Teacher.findOne({ 
+      _id: teacherId,
+      ...(adminId ? { adminId } : {})
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+
+    // Update teacher with new subjects
+    const updatedTeacher = await Teacher.findByIdAndUpdate(
+      teacherId,
+      { 
+        subjects: subjectIds,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).populate('subjects');
+
+    console.log('Updated teacher:', updatedTeacher);
+
+    res.json({
+      success: true,
+      message: 'Subjects assigned successfully',
+      data: updatedTeacher
+    });
   } catch (error) {
-    console.error('Delete question error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete question' });
+    console.error('Assign subjects error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to assign subjects' 
+    });
   }
 };

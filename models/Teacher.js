@@ -15,54 +15,60 @@ const teacherSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
-    minlength: 6
-  },
-  department: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  subjects: [{
-    type: String,
-    trim: true
-  }],
-  qualifications: {
-    type: String,
-    trim: true
-  },
-  experience: {
-    type: Number,
-    default: 0
+    required: true
   },
   phone: {
     type: String,
-    trim: true
+    default: ''
   },
-  isActive: {
-    type: Boolean,
-    default: true
+  department: {
+    type: String,
+    default: ''
+  },
+  qualifications: {
+    type: String,
+    default: ''
+  },
+  subjects: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subject'
+  }],
+  role: {
+    type: String,
+    default: 'teacher'
   },
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
-  permissions: [{
-    type: String,
-    enum: ['create_content', 'manage_students', 'view_analytics', 'create_exams']
-  }],
-  lastLogin: {
-    type: Date
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 }, {
   timestamps: true
 });
 
-// Indexes for better performance
+// Update the updatedAt field before saving
+teacherSchema.pre('save', function(next) {
+  this.updatedAt = new Date();
+  next();
+});
+
+// Create indexes for better performance
 teacherSchema.index({ email: 1 });
 teacherSchema.index({ adminId: 1 });
-teacherSchema.index({ department: 1 });
 teacherSchema.index({ isActive: 1 });
 
-export default mongoose.model('Teacher', teacherSchema);
+const Teacher = mongoose.model('Teacher', teacherSchema);
+
+export default Teacher;

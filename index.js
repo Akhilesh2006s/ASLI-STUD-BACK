@@ -2225,17 +2225,74 @@ const imageUpload = multer({
   }
 });
 
-app.post('/api/admin/upload-question-image', imageUpload.single('image'), (req, res) => {
+app.post('/api/admin/upload-question-image', (req, res, next) => {
+  imageUpload.single('image')(req, res, (err) => {
+    if (err) {
+      console.error('Multer error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          success: false,
+          message: 'File too large. Maximum size is 5MB.' 
+        });
+      }
+      if (err.message === 'Only image files are allowed!') {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Only image files are allowed.' 
+        });
+      }
+      return res.status(500).json({ 
+        success: false,
+        message: 'File upload error',
+        error: err.message 
+      });
+    }
+    next();
+  });
+}, (req, res) => {
   try {
+    console.log('Image upload request received:', {
+      file: req.file ? {
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        filename: req.file.filename
+      } : 'No file',
+      body: req.body
+    });
+
     if (!req.file) {
+      console.log('No file provided in request');
       return res.status(400).json({ message: 'No image file provided' });
     }
 
+    // Ensure the uploads directory exists
+    const fs = require('fs');
+    const path = require('path');
+    const uploadDir = path.join(__dirname, 'uploads', 'questions');
+    
+    if (!fs.existsSync(uploadDir)) {
+      console.log('Creating uploads/questions directory');
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
     const imageUrl = `/uploads/questions/${req.file.filename}`;
-    res.json({ imageUrl });
+    console.log('Image uploaded successfully:', imageUrl);
+    
+    res.json({ 
+      success: true,
+      imageUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size
+    });
   } catch (error) {
     console.error('Failed to upload image:', error);
-    res.status(500).json({ message: 'Failed to upload image' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to upload image',
+      error: error.message 
+    });
   }
 });
 
