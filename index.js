@@ -3707,23 +3707,25 @@ app.post('/api/test-video-simple', async (req, res) => {
     console.log('=== SUPER SIMPLE VIDEO TEST ===');
     console.log('Body:', req.body);
     
-    // Create video with minimal required fields only
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    
+    // Create video with form data or defaults
     const testVideo = new Video({
-      title: 'Test Video',
-      description: 'Test Description',
-      videoUrl: 'https://test.com',
+      title: title || 'Test Video',
+      description: description || 'Test Description',
+      videoUrl: videoUrl || 'https://test.com',
       thumbnailUrl: '',
-      duration: 60, // 1 minute
-      subjectId: 'test-subject',
-      difficulty: 'beginner',
+      duration: parseInt(duration) || 60, // Use form duration or default
+      subjectId: subject || 'test-subject',
+      difficulty: difficulty || 'beginner',
       isPublished: true,
-      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011')
+      adminId: new mongoose.Types.ObjectId() // Generate new valid ObjectId
     });
     
     await testVideo.save();
     console.log('Test video created successfully:', testVideo._id);
     
-    res.json({ success: true, message: 'Test video created', id: testVideo._id });
+    res.json({ success: true, message: 'Test video created', data: testVideo });
   } catch (error) {
     console.error('Test video error:', error);
     console.error('Error details:', error.message);
