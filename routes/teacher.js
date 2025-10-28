@@ -64,13 +64,18 @@ router.post('/videos', async (req, res) => {
     
     console.log('Creating video with data:', { title, description, subject, duration, videoUrl, difficulty, teacherId });
     
+    // Convert duration to number (assuming it's in minutes)
+    const durationInSeconds = parseInt(duration) * 60;
+    
     const newVideo = new Video({
       title,
       description,
-      subject,
-      duration,
+      subjectId: subject, // Use subject as subjectId
+      duration: durationInSeconds, // Convert to seconds
       videoUrl: videoUrl || '',
-      difficulty: difficulty || 'medium',
+      youtubeUrl: videoUrl || '',
+      isYouTubeVideo: !!videoUrl,
+      difficulty: difficulty || 'beginner',
       createdBy: teacherId,
       adminId: req.adminId,
       isPublished: true
@@ -82,6 +87,7 @@ router.post('/videos', async (req, res) => {
   } catch (error) {
     console.error('Create teacher video error:', error);
     console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
   }
 });
@@ -107,10 +113,10 @@ router.post('/assessments', async (req, res) => {
     const newAssessment = new Assessment({
       title,
       description,
-      subject,
+      subjectIds: [subject], // Use subject as subjectIds array
       questions: questions ? JSON.parse(questions) : [],
-      duration: timeLimit,
-      difficulty: difficulty || 'medium',
+      duration: parseInt(timeLimit) || 30, // Convert to number
+      difficulty: difficulty || 'beginner',
       createdBy: teacherId,
       adminId: req.adminId,
       isPublished: true
@@ -122,6 +128,7 @@ router.post('/assessments', async (req, res) => {
   } catch (error) {
     console.error('Create teacher assessment error:', error);
     console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
     res.status(500).json({ success: false, message: 'Failed to create assessment', error: error.message });
   }
 });
