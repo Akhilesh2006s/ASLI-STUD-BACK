@@ -6,6 +6,7 @@ import Video from '../models/Video.js';
 import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
 import Question from '../models/Question.js';
+import ExamResult from '../models/ExamResult.js';
 
 // Admin Dashboard Stats
 export const getAdminDashboardStats = async (req, res) => {
