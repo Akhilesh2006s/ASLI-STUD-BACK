@@ -127,14 +127,21 @@ router.post('/videos-test', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const teacherId = req.teacherId;
+    const teacherId = req.teacherId || req.userId || req.user?._id;
     const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
     console.log('Creating video with data:', { title, description, subject, duration, videoUrl, difficulty, teacherId });
     console.log('req.adminId:', req.adminId);
     console.log('req.user:', req.user);
+    console.log('req.userId:', req.userId);
+    console.log('req.teacherId:', req.teacherId);
     console.log('teacherId type:', typeof teacherId);
     console.log('teacherId value:', teacherId);
+    
+    if (!teacherId) {
+      console.error('No teacher ID found in request');
+      return res.status(400).json({ success: false, message: 'Teacher ID not found' });
+    }
     
     // Convert duration to number (assuming it's in minutes)
     const durationInSeconds = parseInt(duration) * 60;
