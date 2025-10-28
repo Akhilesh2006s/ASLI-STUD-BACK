@@ -934,10 +934,24 @@ export const getTeacherDashboardStats = async (req, res) => {
   try {
     const teacherId = req.teacherId;
     
-    // Get teacher's assigned classes
+    // Get teacher's assigned classes with details
     const teacher = await Teacher.findById(teacherId).populate('subjects');
     if (!teacher) {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+
+    // Get class details for assigned classes
+    let assignedClassesDetails = [];
+    if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
+      // For now, create mock class details since we don't have a Class model yet
+      assignedClassesDetails = teacher.assignedClassIds.map((classId, index) => ({
+        id: classId,
+        name: `Class ${index + 1}`,
+        subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
+        schedule: 'Mon, Wed, Fri',
+        room: `Room ${index + 1}`,
+        studentCount: Math.floor(Math.random() * 20) + 10 // Mock student count
+      }));
     }
 
     // Get students assigned to this teacher's classes
@@ -1007,7 +1021,7 @@ export const getTeacherDashboardStats = async (req, res) => {
           averagePerformance: Math.round(averagePerformance)
         },
         teacherEmail: teacher.email,
-        assignedClasses: teacher.assignedClassIds || [],
+        assignedClasses: assignedClassesDetails,
         students: await Promise.all(students.map(async (student) => {
           // Get real exam results for this student
           const studentExamResults = await ExamResult.find({ studentId: student._id });
