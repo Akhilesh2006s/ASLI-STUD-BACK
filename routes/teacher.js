@@ -23,6 +23,34 @@ import ExamResult from '../models/ExamResult.js';
 
 const router = express.Router();
 
+// Test route without any middleware
+router.post('/test-video', async (req, res) => {
+  try {
+    console.log('=== SIMPLE TEST VIDEO ===');
+    console.log('Body:', req.body);
+    
+    const testVideo = new Video({
+      title: 'Simple Test',
+      description: 'Test',
+      subjectId: 'test',
+      duration: 3600,
+      videoUrl: 'https://test.com',
+      youtubeUrl: 'https://test.com',
+      isYouTubeVideo: true,
+      difficulty: 'beginner',
+      createdBy: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+      isPublished: true
+    });
+    
+    await testVideo.save();
+    res.json({ success: true, message: 'Simple test passed', id: testVideo._id });
+  } catch (error) {
+    console.error('Simple test error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -55,6 +83,45 @@ router.get('/videos', async (req, res) => {
   } catch (error) {
     console.error('Get teacher videos error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch videos' });
+  }
+});
+
+// Test endpoint without middleware
+router.post('/videos-test', async (req, res) => {
+  try {
+    console.log('=== VIDEO TEST ENDPOINT ===');
+    console.log('Raw request body:', req.body);
+    console.log('Headers:', req.headers);
+    
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    
+    // Simple test video creation
+    const testVideo = new Video({
+      title: title || 'Test Video',
+      description: description || 'Test Description',
+      subjectId: subject || 'test',
+      duration: parseInt(duration) * 60 || 3600,
+      videoUrl: videoUrl || 'https://test.com',
+      youtubeUrl: videoUrl || 'https://test.com',
+      isYouTubeVideo: true,
+      difficulty: 'beginner',
+      createdBy: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'), // Test ObjectId
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'), // Test ObjectId
+      isPublished: true
+    });
+    
+    console.log('Test video object:', testVideo);
+    await testVideo.save();
+    console.log('Test video saved successfully:', testVideo._id);
+    
+    res.json({ success: true, message: 'Test video created', data: testVideo });
+  } catch (error) {
+    console.error('=== TEST VIDEO ERROR ===');
+    console.error('Error message:', error.message);
+    console.error('Error name:', error.name);
+    console.error('Error stack:', error.stack);
+    console.error('Full error:', error);
+    res.status(500).json({ success: false, message: 'Test failed', error: error.message, details: error });
   }
 });
 
