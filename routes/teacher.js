@@ -63,6 +63,8 @@ router.post('/videos', async (req, res) => {
     const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
     console.log('Creating video with data:', { title, description, subject, duration, videoUrl, difficulty, teacherId });
+    console.log('req.adminId:', req.adminId);
+    console.log('req.user:', req.user);
     
     // Convert duration to number (assuming it's in minutes)
     const durationInSeconds = parseInt(duration) * 60;
@@ -77,7 +79,7 @@ router.post('/videos', async (req, res) => {
       isYouTubeVideo: !!videoUrl,
       difficulty: difficulty || 'beginner',
       createdBy: teacherId,
-      adminId: req.adminId,
+      adminId: req.adminId || teacherId, // Use teacherId as fallback if adminId is not available
       isPublished: true
     });
 
@@ -109,6 +111,7 @@ router.post('/assessments', async (req, res) => {
     const { title, description, subject, questions, timeLimit, difficulty } = req.body;
     
     console.log('Creating assessment with data:', { title, description, subject, questions, timeLimit, difficulty, teacherId });
+    console.log('req.adminId:', req.adminId);
     
     const newAssessment = new Assessment({
       title,
@@ -118,7 +121,7 @@ router.post('/assessments', async (req, res) => {
       duration: parseInt(timeLimit) || 30, // Convert to number
       difficulty: difficulty || 'beginner',
       createdBy: teacherId,
-      adminId: req.adminId,
+      adminId: req.adminId || teacherId, // Use teacherId as fallback if adminId is not available
       isPublished: true
     });
 
