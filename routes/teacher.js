@@ -14,6 +14,10 @@ import {
   createClasswork,
   createSchedule
 } from '../controllers/aiToolsController.js';
+import Video from '../models/Video.js';
+import Assessment from '../models/Assessment.js';
+import User from '../models/User.js';
+import ExamResult from '../models/ExamResult.js';
 
 const router = express.Router();
 
