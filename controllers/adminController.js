@@ -1006,6 +1006,7 @@ export const getTeacherDashboardStats = async (req, res) => {
           totalAssessments: assessments.length,
           averagePerformance: Math.round(averagePerformance)
         },
+        teacherEmail: teacher.email,
         assignedClasses: teacher.assignedClassIds || [],
         students: await Promise.all(students.map(async (student) => {
           // Get real exam results for this student
