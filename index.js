@@ -3732,6 +3732,63 @@ app.post('/api/test-video-simple', async (req, res) => {
   }
 });
 
+// Emergency video creation endpoint - no auth required for testing
+app.post('/api/emergency-video-create', async (req, res) => {
+  try {
+    console.log('=== EMERGENCY VIDEO CREATION ===');
+    console.log('Body:', req.body);
+    
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    
+    // Validate required fields
+    if (!title || !subject || !duration) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Missing required fields: title, subject, duration' 
+      });
+    }
+    
+    // Create a valid ObjectId for adminId (using current timestamp)
+    const adminId = new mongoose.Types.ObjectId();
+    
+    const videoData = {
+      title: title || 'Untitled Video',
+      description: description || '',
+      videoUrl: videoUrl || '',
+      thumbnailUrl: '',
+      duration: parseInt(duration) || 60,
+      subjectId: subject || 'general',
+      difficulty: difficulty || 'beginner',
+      isPublished: true,
+      adminId: adminId,
+      createdBy: adminId
+    };
+    
+    console.log('Creating video with data:', videoData);
+    
+    const newVideo = new Video(videoData);
+    await newVideo.save();
+    
+    console.log('Emergency video created successfully:', newVideo._id);
+    
+    res.json({ 
+      success: true, 
+      message: 'Video created successfully',
+      data: newVideo 
+    });
+    
+  } catch (error) {
+    console.error('Emergency video creation error:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create video', 
+      error: error.message 
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
