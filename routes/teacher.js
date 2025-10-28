@@ -66,11 +66,14 @@ router.post('/videos', async (req, res) => {
     console.log('Creating video with data:', { title, description, subject, duration, videoUrl, difficulty, teacherId });
     console.log('req.adminId:', req.adminId);
     console.log('req.user:', req.user);
+    console.log('teacherId type:', typeof teacherId);
+    console.log('teacherId value:', teacherId);
     
     // Convert duration to number (assuming it's in minutes)
     const durationInSeconds = parseInt(duration) * 60;
+    console.log('durationInSeconds:', durationInSeconds);
     
-    const newVideo = new Video({
+    const videoData = {
       title,
       description,
       subjectId: subject, // Use subject as subjectId
@@ -79,10 +82,14 @@ router.post('/videos', async (req, res) => {
       youtubeUrl: videoUrl || '',
       isYouTubeVideo: !!videoUrl,
       difficulty: difficulty || 'beginner',
-      createdBy: teacherId,
+      createdBy: new mongoose.Types.ObjectId(teacherId),
       adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
       isPublished: true
-    });
+    };
+    
+    console.log('Video data to save:', videoData);
+    
+    const newVideo = new Video(videoData);
 
     await newVideo.save();
     console.log('Video created successfully:', newVideo._id);
@@ -121,7 +128,7 @@ router.post('/assessments', async (req, res) => {
       questions: questions ? JSON.parse(questions) : [],
       duration: parseInt(timeLimit) || 30, // Convert to number
       difficulty: difficulty || 'beginner',
-      createdBy: teacherId,
+      createdBy: new mongoose.Types.ObjectId(teacherId),
       adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
       isPublished: true
     });
