@@ -26,6 +26,7 @@ import {
   updateTeacher,
   deleteTeacher,
   assignSubjects,
+  assignClasses,
   getTeacherDashboardStats,
   getVideos,
   createVideo,
@@ -80,6 +81,7 @@ router.post('/teachers', addAdminIdToBody, createTeacher);
 router.put('/teachers/:id', verifyDataOwnership(Teacher), updateTeacher);
 router.delete('/teachers/:id', verifyDataOwnership(Teacher), deleteTeacher);
 router.post('/teachers/:teacherId/assign-subjects', assignSubjects);
+router.post('/teachers/:teacherId/assign-classes', assignClasses);
 
 // Video/Course Management Routes
 router.get('/videos', getVideos);

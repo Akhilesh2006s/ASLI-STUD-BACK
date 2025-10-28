@@ -1025,8 +1025,60 @@ export const getTeacherDashboardStats = async (req, res) => {
   }
 };
 
-// Assign subjects to teacher
-export const assignSubjects = async (req, res) => {
+// Assign classes to teacher
+export const assignClasses = async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { classIds } = req.body;
+    const adminId = req.adminId;
+
+    console.log('Assign classes request:', { teacherId, classIds, adminId });
+
+    if (!teacherId || !classIds || !Array.isArray(classIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Teacher ID and class IDs array are required'
+      });
+    }
+
+    // Find the teacher
+    const teacher = await Teacher.findOne({ 
+      _id: teacherId,
+      ...(adminId ? { adminId } : {})
+    });
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Teacher not found'
+      });
+    }
+
+    // Update teacher with new class IDs
+    const updatedTeacher = await Teacher.findByIdAndUpdate(
+      teacherId,
+      { 
+        assignedClassIds: classIds,
+        updatedAt: new Date()
+      },
+      { new: true }
+    );
+
+    console.log('Updated teacher classes:', updatedTeacher);
+
+    res.json({
+      success: true,
+      message: 'Classes assigned successfully',
+      data: updatedTeacher
+    });
+  } catch (error) {
+    console.error('Assign classes error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to assign classes' 
+    });
+  }
+};
   try {
     const { teacherId } = req.params;
     const { subjectIds } = req.body;
