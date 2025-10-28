@@ -44,9 +44,15 @@ export const verifyTeacher = (req, res, next) => {
 
 // Enhanced middleware to extract teacher ID and add to request
 export const extractTeacherId = (req, res, next) => {
+  console.log('extractTeacherId middleware called');
+  console.log('req.user:', req.user);
+  console.log('req.userId:', req.userId);
+  
   if (req.user.role === 'teacher') {
     req.teacherId = req.userId;
+    console.log('Set req.teacherId to:', req.teacherId);
   } else {
+    console.log('User role is not teacher:', req.user.role);
     return res.status(403).json({ success: false, message: 'Access denied. Teacher privileges required.' });
   }
   next();
