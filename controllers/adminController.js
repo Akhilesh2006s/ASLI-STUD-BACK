@@ -1079,6 +1079,9 @@ export const assignClasses = async (req, res) => {
     });
   }
 };
+
+// Assign subjects to teacher
+export const assignSubjects = async (req, res) => {
   try {
     const { teacherId } = req.params;
     const { subjectIds } = req.body;
