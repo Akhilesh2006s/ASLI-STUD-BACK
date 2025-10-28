@@ -3791,6 +3791,48 @@ app.post('/api/emergency-video-create', async (req, res) => {
   }
 });
 
+// Lesson Plan Generation endpoint
+app.post('/api/lesson-plan/generate', async (req, res) => {
+  try {
+    const { subject, topic, gradeLevel, duration } = req.body;
+    
+    if (!subject || !topic || !gradeLevel) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Subject, topic, and grade level are required' 
+      });
+    }
+
+    const prompt = `Create a detailed lesson plan for ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
+
+Please include:
+1. Learning Objectives
+2. Materials Needed
+3. Introduction/Warm-up (5-10 minutes)
+4. Main Activities (with time breakdown)
+5. Assessment/Evaluation
+6. Homework/Follow-up
+7. Differentiation strategies for different learning levels
+
+Make it practical, engaging, and age-appropriate for ${gradeLevel} students.`;
+
+    const lessonPlan = await restGeminiService.generateResponse(prompt, 'lesson-plan-generation', []);
+    
+    res.json({
+      success: true,
+      lessonPlan: lessonPlan
+    });
+    
+  } catch (error) {
+    console.error('Lesson plan generation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to generate lesson plan',
+      error: error.message 
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
