@@ -107,6 +107,9 @@ async function seedSampleData() {
 // Middleware
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://localhost:4174',
   'http://localhost:5174', 
   'http://localhost:5175',
   'http://localhost:5176',
@@ -147,6 +150,11 @@ app.use(cors({
     if (origin && origin.match(/^https:\/\/alsi-stud-frontend-mf3r\.vercel\.app$/)) {
       return callback(null, true);
     }
+
+  // Allow localhost during local dev
+  if (origin && origin.match(/^http:\/\/localhost:(5173|4173|4174)$/)) {
+    return callback(null, true);
+  }
     
     callback(new Error('Not allowed by CORS'));
   },
@@ -161,6 +169,14 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Expose-Headers', 'Set-Cookie');
   next();
+});
+
+// Health endpoint with CORS headers
+app.get('/api/health', (req, res) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Expose-Headers', 'Set-Cookie');
+  res.status(200).json({ status: 'ok', env: process.env.NODE_ENV || 'production' });
 });
 
 // Handle CORS preflight for all API routes
