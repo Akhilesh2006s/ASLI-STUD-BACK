@@ -923,6 +923,12 @@ export const deleteQuestion = async (req, res) => {
       success: true,
       message: 'Question deleted successfully'
     });
+  } catch (error) {
+    console.error('Delete question error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete question' });
+  }
+};
+
 // Assign subjects to teacher
 export const assignSubjects = async (req, res) => {
   try {
