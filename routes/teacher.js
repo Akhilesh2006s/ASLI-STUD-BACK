@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import mongoose from 'mongoose';
 import {
   verifyToken,
   verifyTeacher,
@@ -79,7 +80,7 @@ router.post('/videos', async (req, res) => {
       isYouTubeVideo: !!videoUrl,
       difficulty: difficulty || 'beginner',
       createdBy: teacherId,
-      adminId: req.adminId || teacherId, // Use teacherId as fallback if adminId is not available
+      adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
       isPublished: true
     });
 
@@ -121,7 +122,7 @@ router.post('/assessments', async (req, res) => {
       duration: parseInt(timeLimit) || 30, // Convert to number
       difficulty: difficulty || 'beginner',
       createdBy: teacherId,
-      adminId: req.adminId || teacherId, // Use teacherId as fallback if adminId is not available
+      adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
       isPublished: true
     });
 
