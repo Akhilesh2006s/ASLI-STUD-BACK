@@ -966,6 +966,9 @@ export const testTeacherData = async (req, res) => {
     res.status(500).json({ success: false, message: 'Test failed', error: error.message });
   }
 };
+
+// Teacher Dashboard Stats
+export const getTeacherDashboardStats = async (req, res) => {
   try {
     console.log('Teacher dashboard request received');
     console.log('req.teacherId:', req.teacherId);
