@@ -35,17 +35,30 @@ const getStudentAdminId = async (req, res, next) => {
   }
 };
 
-// Get student's videos (filtered by assigned admin)
-router.get('/videos', getStudentAdminId, async (req, res) => {
+// Get student's videos (show ALL published videos, optionally filtered by subject)
+router.get('/videos', async (req, res) => {
   try {
-    const videos = await Video.find({ 
-      adminId: req.studentAdminId,
+    const { subject } = req.query;
+    
+    // Build query - show ALL published videos (not filtered by admin)
+    let query = { 
+      isPublished: true,
       isActive: true 
-    }).populate('createdBy', 'fullName email');
+    };
+    
+    // Add subject filter if provided
+    if (subject) {
+      query.subjectId = subject;
+    }
+    
+    const videos = await Video.find(query)
+      .populate('createdBy', 'fullName email')
+      .sort({ createdAt: -1 });
     
     res.json({
       success: true,
-      data: videos
+      data: videos,
+      videos: videos // Also include videos array for compatibility
     });
   } catch (error) {
     console.error('Error fetching student videos:', error);
@@ -53,17 +66,31 @@ router.get('/videos', getStudentAdminId, async (req, res) => {
   }
 });
 
-// Get student's assessments (filtered by assigned admin)
-router.get('/assessments', getStudentAdminId, async (req, res) => {
+// Get student's assessments (show ALL published assessments, optionally filtered by subject)
+router.get('/assessments', async (req, res) => {
   try {
-    const assessments = await Assessment.find({ 
-      adminId: req.studentAdminId,
+    const { subject } = req.query;
+    
+    // Build query - show ALL published assessments (not filtered by admin)
+    let query = { 
+      isPublished: true,
       isActive: true 
-    }).populate('createdBy', 'fullName email');
+    };
+    
+    // Add subject filter if provided
+    if (subject) {
+      query.subjectIds = { $in: [subject] };
+    }
+    
+    const assessments = await Assessment.find(query)
+      .populate('createdBy', 'fullName email')
+      .sort({ createdAt: -1 });
     
     res.json({
       success: true,
-      data: assessments
+      data: assessments,
+      assessments: assessments, // Also include assessments array for compatibility
+      quizzes: assessments // Also include quizzes array for compatibility
     });
   } catch (error) {
     console.error('Error fetching student assessments:', error);
