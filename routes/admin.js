@@ -26,6 +26,7 @@ import {
   updateTeacher,
   deleteTeacher,
   assignSubjects,
+  getTeacherDashboardStats,
   getVideos,
   createVideo,
   updateVideo,
@@ -63,6 +64,9 @@ router.use(extractAdminId);
 // Dashboard Routes
 router.get('/dashboard/stats', getAdminDashboardStats);
 router.get('/analytics', getAnalytics);
+
+// Teacher Dashboard Routes
+router.get('/teacher/dashboard', getTeacherDashboardStats);
 
 // Student Management Routes
 router.get('/students', getStudents);

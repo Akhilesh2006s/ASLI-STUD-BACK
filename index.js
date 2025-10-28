@@ -24,6 +24,7 @@ import ExamResult from './models/ExamResult.js';
 // Import routes
 import superAdminRoutes from './routes/superAdmin.js';
 import adminRoutes from './routes/admin.js';
+import teacherRoutes from './routes/teacher.js';
 import studentRoutes from './routes/student.js';
 import aiRoutes from './routes/ai.js';
 
@@ -175,6 +176,7 @@ app.options('/api/*', (req, res) => {
 // Mount routes
 app.use('/api/super-admin', superAdminRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/teacher', teacherRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/ai', aiRoutes);
 

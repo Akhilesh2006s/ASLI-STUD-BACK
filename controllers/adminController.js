@@ -929,6 +929,102 @@ export const deleteQuestion = async (req, res) => {
   }
 };
 
+// Teacher Dashboard Stats
+export const getTeacherDashboardStats = async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    
+    // Get teacher's assigned classes
+    const teacher = await Teacher.findById(teacherId).populate('subjects');
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+
+    // Get students assigned to this teacher's classes
+    const students = await User.find({ 
+      role: 'student',
+      assignedTeacher: teacherId 
+    });
+
+    // Get teacher's videos and assessments
+    const [videos, assessments] = await Promise.all([
+      Video.find({ createdBy: teacherId }),
+      Assessment.find({ createdBy: teacherId })
+    ]);
+
+    // Calculate average performance
+    const examResults = await ExamResult.find({ 
+      studentId: { $in: students.map(s => s._id) }
+    });
+    
+    const averagePerformance = examResults.length > 0 
+      ? examResults.reduce((sum, result) => sum + result.score, 0) / examResults.length 
+      : 0;
+
+    // Get recent activity
+    const recentActivity = [
+      {
+        action: 'New video uploaded',
+        time: '2 hours ago',
+        type: 'video'
+      },
+      {
+        action: 'Assessment created',
+        time: '4 hours ago',
+        type: 'assessment'
+      },
+      {
+        action: 'Student completed exam',
+        time: '6 hours ago',
+        type: 'exam'
+      }
+    ];
+
+    res.json({
+      success: true,
+      data: {
+        stats: {
+          totalStudents: students.length,
+          totalClasses: teacher.subjects?.length || 0,
+          totalVideos: videos.length,
+          totalAssessments: assessments.length,
+          averagePerformance: Math.round(averagePerformance)
+        },
+        students: students.map(student => ({
+          id: student._id,
+          name: student.fullName,
+          email: student.email,
+          classNumber: student.classNumber,
+          performance: Math.floor(Math.random() * 40) + 60, // Mock data
+          lastExamScore: Math.floor(Math.random() * 40) + 60,
+          totalExams: Math.floor(Math.random() * 10) + 1
+        })),
+        videos: videos.map(video => ({
+          id: video._id,
+          title: video.title,
+          subject: video.subject,
+          duration: video.duration,
+          views: Math.floor(Math.random() * 1000) + 100,
+          createdAt: video.createdAt
+        })),
+        assessments: assessments.map(assessment => ({
+          id: assessment._id,
+          title: assessment.title,
+          subject: assessment.subject,
+          questions: assessment.questions?.length || 0,
+          attempts: Math.floor(Math.random() * 50) + 10,
+          averageScore: Math.floor(Math.random() * 30) + 70,
+          createdAt: assessment.createdAt
+        })),
+        recentActivity
+      }
+    });
+  } catch (error) {
+    console.error('Teacher dashboard stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch teacher dashboard stats' });
+  }
+};
+
 // Assign subjects to teacher
 export const assignSubjects = async (req, res) => {
   try {

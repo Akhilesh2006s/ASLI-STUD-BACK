@@ -49,7 +49,12 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     default: null
-  }
+  },
+  assignedTeacher: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Teacher',
+    default: null
+  },
 }, {
   timestamps: true
 });

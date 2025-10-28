@@ -1,0 +1,152 @@
+import express from 'express';
+import multer from 'multer';
+import {
+  verifyToken,
+  verifyTeacher,
+  extractTeacherId
+} from '../middleware/auth.js';
+import {
+  getTeacherDashboardStats
+} from '../controllers/adminController.js';
+import {
+  createLessonPlan,
+  createTestQuestions,
+  createClasswork,
+  createSchedule
+} from '../controllers/aiToolsController.js';
+
+const router = express.Router();
+
+// Configure multer for file uploads
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB limit
+  }
+});
+
+// Apply authentication middleware to all routes
+router.use(verifyToken);
+router.use(verifyTeacher);
+router.use(extractTeacherId);
+
+// Teacher Dashboard Routes
+router.get('/dashboard', getTeacherDashboardStats);
+
+// AI Tools Routes
+router.post('/ai/lesson-plan', createLessonPlan);
+router.post('/ai/test-questions', createTestQuestions);
+router.post('/ai/classwork', createClasswork);
+router.post('/ai/schedule', createSchedule);
+
+// Teacher Content Management Routes
+router.get('/videos', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const videos = await Video.find({ createdBy: teacherId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: videos });
+  } catch (error) {
+    console.error('Get teacher videos error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch videos' });
+  }
+});
+
+router.post('/videos', upload.single('video'), async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { title, description, subject, duration } = req.body;
+    
+    const newVideo = new Video({
+      title,
+      description,
+      subject,
+      duration,
+      videoUrl: req.file ? req.file.buffer.toString('base64') : '',
+      createdBy: teacherId,
+      adminId: req.adminId
+    });
+
+    await newVideo.save();
+    res.json({ success: true, data: newVideo });
+  } catch (error) {
+    console.error('Create teacher video error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create video' });
+  }
+});
+
+router.get('/assessments', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const assessments = await Assessment.find({ createdBy: teacherId }).sort({ createdAt: -1 });
+    res.json({ success: true, data: assessments });
+  } catch (error) {
+    console.error('Get teacher assessments error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch assessments' });
+  }
+});
+
+router.post('/assessments', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { title, description, subject, questions, duration } = req.body;
+    
+    const newAssessment = new Assessment({
+      title,
+      description,
+      subject,
+      questions: JSON.parse(questions),
+      duration,
+      createdBy: teacherId,
+      adminId: req.adminId
+    });
+
+    await newAssessment.save();
+    res.json({ success: true, data: newAssessment });
+  } catch (error) {
+    console.error('Create teacher assessment error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create assessment' });
+  }
+});
+
+// Teacher Student Management Routes
+router.get('/students', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const students = await User.find({ 
+      role: 'student',
+      assignedTeacher: teacherId 
+    }).select('-password').sort({ createdAt: -1 });
+    
+    res.json({ success: true, data: students });
+  } catch (error) {
+    console.error('Get teacher students error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch students' });
+  }
+});
+
+router.get('/students/:studentId/performance', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const teacherId = req.teacherId;
+    
+    // Verify student is assigned to this teacher
+    const student = await User.findOne({ 
+      _id: studentId,
+      assignedTeacher: teacherId 
+    });
+    
+    if (!student) {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Get student's exam results
+    const examResults = await ExamResult.find({ studentId }).sort({ createdAt: -1 });
+    
+    res.json({ success: true, data: examResults });
+  } catch (error) {
+    console.error('Get student performance error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch student performance' });
+  }
+});
+
+export default router;
