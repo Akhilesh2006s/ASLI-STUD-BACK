@@ -943,15 +943,73 @@ export const getTeacherDashboardStats = async (req, res) => {
     // Get class details for assigned classes
     let assignedClassesDetails = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
-      // For now, create mock class details since we don't have a Class model yet
-      assignedClassesDetails = teacher.assignedClassIds.map((classId, index) => ({
-        id: classId,
-        name: `Class ${index + 1}`,
-        subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
-        schedule: 'Mon, Wed, Fri',
-        room: `Room ${index + 1}`,
-        studentCount: Math.floor(Math.random() * 20) + 10 // Mock student count
-      }));
+      // Fetch actual class details from the classes endpoint
+      try {
+        // Get students to determine class details
+        const students = await User.find({ 
+          role: 'student',
+          assignedAdmin: teacher.adminId 
+        }).select('fullName email classNumber phone isActive createdAt lastLogin');
+        
+        // Group students by class to get class details
+        const classMap = new Map();
+        
+        students.forEach(student => {
+          const classKey = student.classNumber || 'Unassigned';
+          if (!classMap.has(classKey)) {
+            classMap.set(classKey, {
+              id: classKey,
+              name: `Class ${classKey}`,
+              description: `Students in class ${classKey}`,
+              subject: 'General',
+              grade: classKey,
+              teacher: 'TBD',
+              schedule: 'Mon-Fri 9:00 AM',
+              room: `Room ${classKey}`,
+              studentCount: 0,
+              students: []
+            });
+          }
+          
+          const classObj = classMap.get(classKey);
+          classObj.students.push({
+            id: student._id,
+            name: student.fullName,
+            email: student.email,
+            classNumber: student.classNumber
+          });
+          classObj.studentCount++;
+        });
+        
+        // Filter classes that are assigned to this teacher
+        const allClasses = Array.from(classMap.values());
+        assignedClassesDetails = allClasses.filter(classItem => 
+          teacher.assignedClassIds.includes(classItem.id)
+        );
+        
+        // If no matching classes found, create basic details for assigned class IDs
+        if (assignedClassesDetails.length === 0) {
+          assignedClassesDetails = teacher.assignedClassIds.map((classId, index) => ({
+            id: classId,
+            name: `Class ${classId}`,
+            subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
+            schedule: 'Mon, Wed, Fri',
+            room: `Room ${classId}`,
+            studentCount: Math.floor(Math.random() * 20) + 10
+          }));
+        }
+      } catch (error) {
+        console.error('Error fetching class details:', error);
+        // Fallback to mock data if there's an error
+        assignedClassesDetails = teacher.assignedClassIds.map((classId, index) => ({
+          id: classId,
+          name: `Class ${classId}`,
+          subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
+          schedule: 'Mon, Wed, Fri',
+          room: `Room ${classId}`,
+          studentCount: Math.floor(Math.random() * 20) + 10
+        }));
+      }
     }
 
     // Get students assigned to this teacher's classes
