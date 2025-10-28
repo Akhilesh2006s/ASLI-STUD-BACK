@@ -991,16 +991,14 @@ export const getTeacherDashboardStats = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
+    // Get ALL students (not filtered by classes)
+    const students = await User.find({ 
+      role: 'student'
+    });
+
     // Get class details for assigned classes
     let assignedClassesDetails = [];
-    let students = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
-      // Fetch students that belong to the teacher's assigned classes
-      students = await User.find({
-        role: 'student',
-        classNumber: { $in: teacher.assignedClassIds }
-      });
-
       // Build a map of classId -> studentCount
       const classIdToCount = teacher.assignedClassIds.reduce((acc, id) => {
         acc[id] = 0;
@@ -1021,15 +1019,13 @@ export const getTeacherDashboardStats = async (req, res) => {
         room: `Room ${classId}`,
         studentCount: classIdToCount[classId] || 0
       }));
-    } else {
-      // No assigned classes → no students
-      students = [];
     }
 
     // Get teacher's videos and assessments
-    const [videos, assessments] = await Promise.all([
-      Video.find({ createdBy: teacherId }),
-      Assessment.find({ createdBy: teacherId })
+    const [videos, assessments, exams] = await Promise.all([
+      Video.find({ createdBy: teacherId }).populate('createdBy', 'fullName email'),
+      Assessment.find({ createdBy: teacherId }).populate('createdBy', 'fullName email'),
+      Exam.find({ createdBy: teacherId }).populate('createdBy', 'fullName email')
     ]);
 
     // Calculate average performance
@@ -1084,6 +1080,7 @@ export const getTeacherDashboardStats = async (req, res) => {
           totalClasses: teacher.assignedClassIds?.length || 0,
           totalVideos: videos.length,
           totalAssessments: assessments.length,
+          totalExams: exams.length,
           averagePerformance: Math.round(averagePerformance)
         },
         teacherEmail: teacher.email,
@@ -1113,7 +1110,11 @@ export const getTeacherDashboardStats = async (req, res) => {
           subject: video.subject,
           duration: video.duration,
           views: video.views || 0,
-          createdAt: video.createdAt
+          createdAt: video.createdAt,
+          createdBy: video.createdBy ? {
+            name: video.createdBy.fullName,
+            email: video.createdBy.email
+          } : null
         })),
         assessments: assessments.map(assessment => ({
           id: assessment._id,
@@ -1122,7 +1123,23 @@ export const getTeacherDashboardStats = async (req, res) => {
           questions: assessment.questions?.length || 0,
           attempts: assessment.attempts || 0,
           averageScore: assessment.averageScore || 0,
-          createdAt: assessment.createdAt
+          createdAt: assessment.createdAt,
+          createdBy: assessment.createdBy ? {
+            name: assessment.createdBy.fullName,
+            email: assessment.createdBy.email
+          } : null
+        })),
+        exams: exams.map(exam => ({
+          id: exam._id,
+          title: exam.title,
+          subject: exam.subject,
+          questions: exam.questions?.length || 0,
+          duration: exam.duration,
+          createdAt: exam.createdAt,
+          createdBy: exam.createdBy ? {
+            name: exam.createdBy.fullName,
+            email: exam.createdBy.email
+          } : null
         })),
         recentActivity
       }
