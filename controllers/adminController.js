@@ -932,10 +932,21 @@ export const deleteQuestion = async (req, res) => {
 // Teacher Dashboard Stats
 export const getTeacherDashboardStats = async (req, res) => {
   try {
+    console.log('Teacher dashboard request received');
+    console.log('req.teacherId:', req.teacherId);
+    console.log('req.user:', req.user);
+    
     const teacherId = req.teacherId;
+    
+    if (!teacherId) {
+      console.error('No teacherId found in request');
+      return res.status(400).json({ success: false, message: 'Teacher ID not found' });
+    }
     
     // Get teacher's assigned classes with details
     const teacher = await Teacher.findById(teacherId).populate('subjects');
+    console.log('Teacher found:', teacher ? teacher.email : 'Not found');
+    
     if (!teacher) {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
@@ -1063,7 +1074,8 @@ export const getTeacherDashboardStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Teacher dashboard stats error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch teacher dashboard stats' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Failed to fetch teacher dashboard stats', error: error.message });
   }
 };
 
