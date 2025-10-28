@@ -984,6 +984,8 @@ export const getTeacherDashboardStats = async (req, res) => {
     // Get teacher's assigned classes with details
     const teacher = await Teacher.findById(teacherId).populate('subjects');
     console.log('Teacher found:', teacher ? teacher.email : 'Not found');
+    console.log('Teacher assignedClassIds:', teacher?.assignedClassIds);
+    console.log('Teacher assignedClassIds length:', teacher?.assignedClassIds?.length);
     
     if (!teacher) {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
