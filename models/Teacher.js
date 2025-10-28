@@ -33,10 +33,7 @@ const teacherSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Subject'
   }],
-  assignedClassIds: [{
-    type: String,
-    required: true
-  }],
+  assignedClassIds: [String],
   role: {
     type: String,
     default: 'teacher'

@@ -1065,6 +1065,7 @@ export const assignClasses = async (req, res) => {
     );
 
     console.log('Updated teacher classes:', updatedTeacher);
+    console.log('Updated teacher assignedClassIds:', updatedTeacher.assignedClassIds);
 
     res.json({
       success: true,
