@@ -3541,6 +3541,59 @@ app.post('/api/test-video', async (req, res) => {
   }
 });
 
+// Working video creation endpoint for teachers
+app.post('/api/teacher/videos-working', async (req, res) => {
+  try {
+    console.log('=== WORKING TEACHER VIDEO ENDPOINT ===');
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    
+    // Extract token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    console.log('Token:', token);
+    
+    // Verify token and get user info
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('Decoded token:', decoded);
+    
+    if (decoded.role !== 'teacher') {
+      return res.status(403).json({ success: false, message: 'Teacher access required' });
+    }
+    
+    const teacherId = decoded.userId;
+    console.log('Teacher ID from token:', teacherId);
+    
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    
+    const newVideo = new Video({
+      title,
+      description,
+      subjectId: subject,
+      duration: parseInt(duration) * 60,
+      videoUrl: videoUrl || '',
+      youtubeUrl: videoUrl || '',
+      isYouTubeVideo: !!videoUrl,
+      difficulty: difficulty || 'beginner',
+      createdBy: new mongoose.Types.ObjectId(teacherId),
+      adminId: new mongoose.Types.ObjectId(teacherId),
+      isPublished: true
+    });
+    
+    await newVideo.save();
+    console.log('Working video created successfully:', newVideo._id);
+    
+    res.json({ success: true, data: newVideo });
+  } catch (error) {
+    console.error('Working video creation error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
