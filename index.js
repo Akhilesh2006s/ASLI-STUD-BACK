@@ -1820,27 +1820,7 @@ app.post('/api/debug/create-multiple-teachers', async (req, res) => {
   }
 });
 
-// Teacher routes (protected)
-if (process.env.NODE_ENV === 'development') {
-  app.use('/api/teacher', (req, res, next) => {
-    // Development bypass - mock teacher user
-    req.user = { 
-      _id: '68fb5f00cde14c9994483094', 
-      email: 'teacher@test.com', 
-      fullName: 'Test Teacher', 
-      role: 'teacher' 
-    };
-    req.isAuthenticated = () => true;
-    next();
-  });
-} else {
-  app.use('/api/teacher', requireAuth, (req, res, next) => {
-    if (req.user.role !== 'teacher') {
-      return res.status(403).json({ message: 'Access denied. Teacher role required.' });
-    }
-    next();
-  });
-}
+// Teacher routes are already mounted above at line 195
 
 // Get teacher profile with subjects
 app.get('/api/teacher/profile', async (req, res) => {
