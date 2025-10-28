@@ -3605,10 +3605,18 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
     
     const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
+    console.log('Parsed data:', { title, description, subject, duration, videoUrl, difficulty });
+    
+    // Validate required fields
+    if (!title || !subject || !duration) {
+      console.error('Missing required fields:', { title, subject, duration });
+      return res.status(400).json({ message: 'Missing required fields: title, subject, duration' });
+    }
+    
     // Use EXACT same logic as admin video creation - teachers act as admins
-    const newVideo = new Video({
+    const videoData = {
       title,
-      description,
+      description: description || '',
       videoUrl: videoUrl || '',
       thumbnailUrl: '', // Empty like admin
       duration: parseInt(duration), // NO conversion - exact like admin
@@ -3616,7 +3624,11 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
       difficulty: difficulty || 'beginner',
       isPublished: true, // Make visible to ALL students
       adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011') // Use a default adminId
-    });
+    };
+    
+    console.log('Video data to save:', videoData);
+    
+    const newVideo = new Video(videoData);
     
     await newVideo.save();
     console.log('Teacher video created successfully:', newVideo._id);
@@ -3624,7 +3636,9 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
     res.status(201).json(newVideo); // Exact same response as admin
   } catch (error) {
     console.error('Teacher video creation error:', error);
-    res.status(500).json({ message: 'Failed to create video' }); // Exact same error response
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ message: 'Failed to create video', error: error.message }); // Include error details
   }
 });
 
@@ -3662,6 +3676,37 @@ app.post('/api/teacher-assessments-admin-style', async (req, res) => {
   } catch (error) {
     console.error('Teacher assessment creation error:', error);
     res.status(500).json({ message: 'Failed to create assessment' }); // Exact same error response
+  }
+});
+
+// Super simple test endpoint to isolate video creation issue
+app.post('/api/test-video-simple', async (req, res) => {
+  try {
+    console.log('=== SUPER SIMPLE VIDEO TEST ===');
+    console.log('Body:', req.body);
+    
+    // Create video with minimal required fields only
+    const testVideo = new Video({
+      title: 'Test Video',
+      description: 'Test Description',
+      videoUrl: 'https://test.com',
+      thumbnailUrl: '',
+      duration: 60, // 1 minute
+      subjectId: 'test-subject',
+      difficulty: 'beginner',
+      isPublished: true,
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011')
+    });
+    
+    await testVideo.save();
+    console.log('Test video created successfully:', testVideo._id);
+    
+    res.json({ success: true, message: 'Test video created', id: testVideo._id });
+  } catch (error) {
+    console.error('Test video error:', error);
+    console.error('Error details:', error.message);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
