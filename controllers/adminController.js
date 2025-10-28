@@ -993,23 +993,38 @@ export const getTeacherDashboardStats = async (req, res) => {
 
     // Get class details for assigned classes
     let assignedClassesDetails = [];
+    let students = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
-      // Create class details for assigned classes
-      assignedClassesDetails = teacher.assignedClassIds.map((classId, index) => ({
+      // Fetch students that belong to the teacher's assigned classes
+      students = await User.find({
+        role: 'student',
+        classNumber: { $in: teacher.assignedClassIds }
+      });
+
+      // Build a map of classId -> studentCount
+      const classIdToCount = teacher.assignedClassIds.reduce((acc, id) => {
+        acc[id] = 0;
+        return acc;
+      }, {});
+      for (const s of students) {
+        if (classIdToCount[s.classNumber] !== undefined) {
+          classIdToCount[s.classNumber] += 1;
+        }
+      }
+
+      // Create class cards with real student counts
+      assignedClassesDetails = teacher.assignedClassIds.map((classId) => ({
         id: classId,
         name: `Class ${classId}`,
         subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
         schedule: 'Mon, Wed, Fri',
         room: `Room ${classId}`,
-        studentCount: Math.floor(Math.random() * 20) + 10
+        studentCount: classIdToCount[classId] || 0
       }));
+    } else {
+      // No assigned classes → no students
+      students = [];
     }
-
-    // Get students assigned to this teacher's classes
-    const students = await User.find({ 
-      role: 'student',
-      assignedTeacher: teacherId 
-    });
 
     // Get teacher's videos and assessments
     const [videos, assessments] = await Promise.all([
