@@ -1001,11 +1001,12 @@ export const getTeacherDashboardStats = async (req, res) => {
       data: {
         stats: {
           totalStudents: students.length,
-          totalClasses: teacher.subjects?.length || 0,
+          totalClasses: teacher.assignedClassIds?.length || 0,
           totalVideos: videos.length,
           totalAssessments: assessments.length,
           averagePerformance: Math.round(averagePerformance)
         },
+        assignedClasses: teacher.assignedClassIds || [],
         students: await Promise.all(students.map(async (student) => {
           // Get real exam results for this student
           const studentExamResults = await ExamResult.find({ studentId: student._id });
