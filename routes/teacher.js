@@ -57,26 +57,32 @@ router.get('/videos', async (req, res) => {
   }
 });
 
-router.post('/videos', upload.single('video'), async (req, res) => {
+router.post('/videos', async (req, res) => {
   try {
     const teacherId = req.teacherId;
-    const { title, description, subject, duration } = req.body;
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    
+    console.log('Creating video with data:', { title, description, subject, duration, videoUrl, difficulty, teacherId });
     
     const newVideo = new Video({
       title,
       description,
       subject,
       duration,
-      videoUrl: req.file ? req.file.buffer.toString('base64') : '',
+      videoUrl: videoUrl || '',
+      difficulty: difficulty || 'medium',
       createdBy: teacherId,
-      adminId: req.adminId
+      adminId: req.adminId,
+      isPublished: true
     });
 
     await newVideo.save();
+    console.log('Video created successfully:', newVideo._id);
     res.json({ success: true, data: newVideo });
   } catch (error) {
     console.error('Create teacher video error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create video' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
   }
 });
 
@@ -94,23 +100,29 @@ router.get('/assessments', async (req, res) => {
 router.post('/assessments', async (req, res) => {
   try {
     const teacherId = req.teacherId;
-    const { title, description, subject, questions, duration } = req.body;
+    const { title, description, subject, questions, timeLimit, difficulty } = req.body;
+    
+    console.log('Creating assessment with data:', { title, description, subject, questions, timeLimit, difficulty, teacherId });
     
     const newAssessment = new Assessment({
       title,
       description,
       subject,
-      questions: JSON.parse(questions),
-      duration,
+      questions: questions ? JSON.parse(questions) : [],
+      duration: timeLimit,
+      difficulty: difficulty || 'medium',
       createdBy: teacherId,
-      adminId: req.adminId
+      adminId: req.adminId,
+      isPublished: true
     });
 
     await newAssessment.save();
+    console.log('Assessment created successfully:', newAssessment._id);
     res.json({ success: true, data: newAssessment });
   } catch (error) {
     console.error('Create teacher assessment error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create assessment' });
+    console.error('Error details:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to create assessment', error: error.message });
   }
 });
 
