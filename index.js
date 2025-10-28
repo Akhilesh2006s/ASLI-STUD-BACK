@@ -3615,7 +3615,7 @@ app.post('/api/teacher-videos-admin-style', async (req, res) => {
       subjectId: subject,
       difficulty: difficulty || 'beginner',
       isPublished: true, // Make visible to ALL students
-      adminId: null // Teachers act as admins, no adminId needed
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011') // Use a default adminId
     });
     
     await newVideo.save();
@@ -3652,7 +3652,7 @@ app.post('/api/teacher-assessments-admin-style', async (req, res) => {
       duration: parseInt(duration),
       totalPoints,
       isPublished: true, // Make visible to ALL students
-      adminId: null // Teachers act as admins, no adminId needed
+      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011') // Use a default adminId
     });
     
     await newAssessment.save();
