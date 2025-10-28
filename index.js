@@ -3597,33 +3597,40 @@ app.post('/api/teacher/videos-working', async (req, res) => {
   }
 });
 
-// Super simple video creation without any auth
-app.post('/api/simple-video', async (req, res) => {
+// Teacher video creation using admin logic
+app.post('/api/teacher-videos-admin-style', async (req, res) => {
   try {
-    console.log('=== SUPER SIMPLE VIDEO ===');
+    console.log('=== TEACHER VIDEO ADMIN STYLE ===');
     console.log('Body:', req.body);
     
-    const { title, description, subject, duration, videoUrl } = req.body;
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
     
-    const simpleVideo = new Video({
-      title: title || 'Simple Video',
-      description: description || 'Simple Description',
-      subjectId: subject || 'simple',
-      duration: parseInt(duration) * 60 || 3600,
-      videoUrl: videoUrl || 'https://simple.com',
-      youtubeUrl: videoUrl || 'https://simple.com',
-      isYouTubeVideo: true,
-      difficulty: 'beginner',
-      createdBy: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
-      adminId: new mongoose.Types.ObjectId('507f1f77bcf86cd799439011'),
+    // Use exact same logic as admin video creation
+    const newVideo = new Video({
+      title,
+      description,
+      videoUrl: videoUrl || '',
+      thumbnailUrl: '', // Empty for now
+      duration: parseInt(duration) * 60, // Convert minutes to seconds
+      subjectId: subject,
+      difficulty: difficulty || 'beginner',
+      youtubeUrl: videoUrl || '',
+      isYouTubeVideo: !!videoUrl,
       isPublished: true
+      // No createdBy or adminId - just like admin videos
     });
     
-    await simpleVideo.save();
-    res.json({ success: true, message: 'Simple video created', id: simpleVideo._id });
+    await newVideo.save();
+    console.log('Teacher video created successfully:', newVideo._id);
+    
+    res.status(201).json({
+      success: true,
+      message: 'Video created successfully',
+      data: newVideo
+    });
   } catch (error) {
-    console.error('Simple video error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Teacher video creation error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
   }
 });
 
