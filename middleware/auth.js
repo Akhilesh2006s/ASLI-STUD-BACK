@@ -26,6 +26,14 @@ export const verifySuperAdmin = (req, res, next) => {
   next();
 };
 
+// Middleware to check if user is admin or super admin
+export const verifyAdmin = (req, res, next) => {
+  if (!['admin', 'super-admin'].includes(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
+  }
+  next();
+};
+
 // Middleware to check if user is teacher
 export const verifyTeacher = (req, res, next) => {
   if (req.user.role !== 'teacher') {
