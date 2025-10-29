@@ -1111,6 +1111,7 @@ export const getTeacherDashboardStats = async (req, res) => {
           averagePerformance: Math.round(averagePerformance)
         },
         teacherEmail: teacher.email,
+        teacherSubjects: teacher.subjects || [],
         assignedClasses: assignedClassesDetails,
         students: students.map(student => ({
           id: student._id,
