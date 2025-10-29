@@ -2491,6 +2491,9 @@ app.get('/api/admin/classes', async (req, res) => {
       assignedAdmin: adminId 
     }).select('fullName email classNumber phone isActive createdAt lastLogin');
     
+    console.log('Admin classes endpoint - Found students:', students.length);
+    console.log('Students data:', students.map(s => ({ name: s.fullName, class: s.classNumber })));
+    
     // Group students by class
     const classMap = new Map();
     
@@ -2499,13 +2502,13 @@ app.get('/api/admin/classes', async (req, res) => {
       if (!classMap.has(classKey)) {
         classMap.set(classKey, {
           id: classKey,
-          name: `Class ${classKey}`,
+          name: `Class Class-${classKey}`,
           description: `Students in class ${classKey}`,
           subject: 'General',
           grade: classKey,
           teacher: 'TBD',
           schedule: 'Mon-Fri 9:00 AM',
-          room: `Room ${classKey}`,
+          room: `Room Class-${classKey}`,
           studentCount: 0,
           students: [],
           createdAt: new Date().toISOString()
@@ -2527,6 +2530,11 @@ app.get('/api/admin/classes', async (req, res) => {
     });
     
     const classes = Array.from(classMap.values());
+    console.log('Classes being returned:', classes.map(c => ({ 
+      name: c.name, 
+      studentCount: c.studentCount, 
+      students: c.students.length 
+    })));
     res.json(classes);
   } catch (error) {
     console.error('Failed to fetch classes:', error);

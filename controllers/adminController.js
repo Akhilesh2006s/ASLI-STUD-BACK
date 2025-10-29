@@ -1016,15 +1016,30 @@ export const getTeacherDashboardStats = async (req, res) => {
         }
       }
 
-      // Create class cards with real student counts
-      assignedClassesDetails = teacher.assignedClassIds.map((classId) => ({
-        id: classId,
-        name: `Class ${classId}`,
-        subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
-        schedule: 'Mon, Wed, Fri',
-        room: `Room ${classId}`,
-        studentCount: classIdToCount[classId] || 0
-      }));
+      // Create class cards with real student counts and student details
+      assignedClassesDetails = teacher.assignedClassIds.map((classId) => {
+        // Get students for this specific class
+        const classStudents = students.filter(s => s.classNumber === classId);
+        
+        return {
+          id: classId,
+          name: `Class Class-${classId}`,
+          subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
+          schedule: 'Mon, Wed, Fri',
+          room: `Room Class-${classId}`,
+          studentCount: classIdToCount[classId] || 0,
+          students: classStudents.map(student => ({
+            id: student._id,
+            name: student.fullName,
+            email: student.email,
+            classNumber: student.classNumber,
+            phone: student.phone,
+            status: student.isActive ? 'active' : 'inactive',
+            createdAt: student.createdAt,
+            lastLogin: student.lastLogin
+          }))
+        };
+      });
     }
 
     // Get teacher's videos and assessments
