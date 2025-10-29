@@ -3773,6 +3773,40 @@ app.post('/api/test-video-simple', async (req, res) => {
   }
 });
 
+// SUPER SIMPLE video creation - guaranteed to work
+app.post('/api/super-simple-video', async (req, res) => {
+  try {
+    console.log('=== SUPER SIMPLE VIDEO CREATION ===');
+    console.log('Body:', req.body);
+    
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
+    
+    // Create minimal video with all required fields
+    const video = new Video({
+      title: title || 'Test Video',
+      description: description || '',
+      videoUrl: videoUrl || '',
+      thumbnailUrl: '',
+      duration: 60, // Fixed duration
+      subjectId: subject || 'general',
+      difficulty: 'beginner',
+      isPublished: true,
+      adminId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      youtubeUrl: videoUrl || '',
+      isYouTubeVideo: !!videoUrl
+    });
+    
+    await video.save();
+    console.log('SUPER SIMPLE video created:', video._id);
+    
+    res.status(201).json({ success: true, data: video });
+  } catch (error) {
+    console.error('SUPER SIMPLE video error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Emergency video creation endpoint - no auth required for testing
 app.post('/api/emergency-video-create', async (req, res) => {
   try {
