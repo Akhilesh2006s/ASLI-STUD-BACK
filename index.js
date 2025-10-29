@@ -3807,6 +3807,64 @@ app.post('/api/super-simple-video', async (req, res) => {
   }
 });
 
+// Teacher video creation endpoint - ensures videos persist on teacher dashboard
+app.post('/api/teacher/videos', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.split(' ')[1];
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+    const decoded = jwt.verify(token, jwtSecret);
+
+    // Resolve teacher
+    const teacherId = decoded.userId || decoded.id || decoded._id;
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ success: false, message: 'Invalid teacher identity in token' });
+    }
+    const teacherDoc = await Teacher.findById(teacherId).select('_id adminId');
+    if (!teacherDoc) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
+    if (!title || !subject || (!duration && duration !== 0)) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: title, subject, duration' });
+    }
+
+    // Duration comes in minutes from UI; convert to seconds for schema
+    const minutes = Number.isFinite(Number(duration)) ? Number(duration) : 1;
+    const durationSeconds = Math.max(1, Math.floor(minutes)) * 60;
+
+    const newVideo = new Video({
+      title: String(title).trim(),
+      description: (description || '').trim(),
+      videoUrl: (videoUrl || '').trim(),
+      youtubeUrl: (videoUrl || '').trim(),
+      isYouTubeVideo: !!videoUrl,
+      thumbnailUrl: '',
+      duration: durationSeconds,
+      subjectId: String(subject).trim(),
+      difficulty: (difficulty || 'beginner').toLowerCase(),
+      isPublished: true,
+      createdBy: teacherDoc._id,
+      adminId: teacherDoc.adminId || teacherDoc._id
+    });
+
+    const validationError = newVideo.validateSync();
+    if (validationError) {
+      return res.status(400).json({ success: false, message: 'Validation failed', error: validationError.message, details: validationError.errors });
+    }
+
+    await newVideo.save();
+    return res.status(201).json({ success: true, data: newVideo });
+  } catch (error) {
+    console.error('Teacher /api/teacher/videos error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
+  }
+});
+
 // Emergency video creation endpoint - no auth required for testing
 app.post('/api/emergency-video-create', async (req, res) => {
   try {
