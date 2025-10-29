@@ -529,3 +529,4 @@ export default {
   getDetailedAIAnalytics,
   getAdminDetailedAnalytics
 };
+

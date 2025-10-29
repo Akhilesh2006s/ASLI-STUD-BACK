@@ -88,3 +88,4 @@ examResultSchema.index({ adminId: 1, completedAt: -1 }); // For admin-specific a
 const ExamResult = mongoose.model('ExamResult', examResultSchema);
 
 export default ExamResult;
+

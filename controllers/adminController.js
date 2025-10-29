@@ -991,19 +991,22 @@ export const getTeacherDashboardStats = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    // Get ALL students (not filtered by classes)
+    // Get only students assigned to this teacher
     const students = await User.find({ 
-      role: 'student'
+      role: 'student',
+      assignedTeacher: teacherId
     });
 
     // Get class details for assigned classes
     let assignedClassesDetails = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
-      // Build a map of classId -> studentCount
+      // Build a map of classId -> studentCount (only for assigned students)
       const classIdToCount = teacher.assignedClassIds.reduce((acc, id) => {
         acc[id] = 0;
         return acc;
       }, {});
+      
+      // Count only assigned students in each class
       for (const s of students) {
         if (classIdToCount[s.classNumber] !== undefined) {
           classIdToCount[s.classNumber] += 1;

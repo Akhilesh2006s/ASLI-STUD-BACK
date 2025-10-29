@@ -3803,20 +3803,27 @@ app.post('/api/lesson-plan/generate', async (req, res) => {
       });
     }
 
-    const prompt = `Create a detailed lesson plan for ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
+    const prompt = `Create a detailed lesson plan for IIT JEE Mains preparation in ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
 
-Please include:
-1. Learning Objectives
-2. Materials Needed
-3. Introduction/Warm-up (5-10 minutes)
-4. Main Activities (with time breakdown)
-5. Assessment/Evaluation
-6. Homework/Follow-up
-7. Differentiation strategies for different learning levels
+This is for IIT JEE Mains coaching, so please include:
+1. Learning Objectives (JEE-specific)
+2. Prerequisites and Previous Knowledge Required
+3. Materials Needed (including JEE reference books)
+4. Introduction/Warm-up (5-10 minutes) - Connect to JEE pattern
+5. Main Content Delivery (with time breakdown):
+   - Theory explanation
+   - Important formulas and concepts
+   - Problem-solving techniques
+   - JEE-level examples
+6. Practice Problems (JEE Mains level)
+7. Assessment/Evaluation (JEE-style questions)
+8. Homework/Assignment (JEE practice problems)
+9. Common Mistakes and Tips
+10. Next Class Preview
 
-Make it practical, engaging, and age-appropriate for ${gradeLevel} students.`;
+Make it practical, engaging, and focused on JEE Mains preparation. Include specific JEE-level problems and techniques that students need to master for the exam.`;
 
-    const lessonPlan = await restGeminiService.generateResponse(prompt, 'lesson-plan-generation', []);
+    const lessonPlan = await restGeminiService.generateResponse(prompt, 'jee-lesson-plan-generation', []);
     
     res.json({
       success: true,
