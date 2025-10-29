@@ -991,13 +991,19 @@ export const getTeacherDashboardStats = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    // Get students from teacher's assigned classes
+    // Get students from teacher's assigned classes AND assigned to the same admin as the teacher
     let students = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
       students = await User.find({ 
         role: 'student',
-        classNumber: { $in: teacher.assignedClassIds }
+        classNumber: { $in: teacher.assignedClassIds },
+        assignedAdmin: teacher.adminId  // Filter by teacher's admin
       });
+      
+      console.log('Teacher dashboard - Found students:', students.length);
+      console.log('Teacher adminId:', teacher.adminId);
+      console.log('Teacher assignedClassIds:', teacher.assignedClassIds);
+      console.log('Students data:', students.map(s => ({ name: s.fullName, class: s.classNumber, admin: s.assignedAdmin })));
     }
 
     // Get class details for assigned classes

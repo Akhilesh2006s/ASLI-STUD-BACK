@@ -229,12 +229,13 @@ router.get('/students', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
     
-    // Get students from teacher's assigned classes
+    // Get students from teacher's assigned classes AND assigned to the same admin as the teacher
     let students = [];
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
       students = await User.find({ 
         role: 'student',
-        classNumber: { $in: teacher.assignedClassIds }
+        classNumber: { $in: teacher.assignedClassIds },
+        assignedAdmin: teacher.adminId  // Filter by teacher's admin
       }).select('-password').sort({ createdAt: -1 });
     }
     
@@ -256,11 +257,12 @@ router.get('/students/:studentId/performance', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
     
-    // Verify student is in teacher's assigned classes
+    // Verify student is in teacher's assigned classes AND assigned to the same admin as the teacher
     const student = await User.findOne({ 
       _id: studentId,
       role: 'student',
-      classNumber: { $in: teacher.assignedClassIds || [] }
+      classNumber: { $in: teacher.assignedClassIds || [] },
+      assignedAdmin: teacher.adminId  // Filter by teacher's admin
     });
     
     if (!student) {
