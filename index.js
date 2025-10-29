@@ -3574,8 +3574,18 @@ app.post('/api/teacher/videos-working', async (req, res) => {
       return res.status(403).json({ success: false, message: 'Teacher access required' });
     }
     
-    const teacherId = decoded.userId;
-    console.log('Teacher ID from token:', teacherId);
+    let teacherId = decoded.userId || decoded.id || decoded._id;
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      // Fallback: resolve by email
+      if (decoded.email) {
+        const userDoc = await User.findOne({ email: decoded.email }).select('_id');
+        teacherId = userDoc?._id?.toString();
+      }
+    }
+    console.log('Teacher ID resolved:', teacherId);
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ success: false, message: 'Invalid teacher identity in token' });
+    }
     
     const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
 
