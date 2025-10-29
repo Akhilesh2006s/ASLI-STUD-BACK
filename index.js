@@ -3789,7 +3789,7 @@ app.post('/api/super-simple-video', async (req, res) => {
       thumbnailUrl: '',
       duration: 60, // Fixed duration
       subjectId: subject || 'general',
-      difficulty: 'beginner',
+      difficulty: difficulty === 'medium' ? 'intermediate' : (difficulty || 'beginner'),
       isPublished: true,
       adminId: new mongoose.Types.ObjectId(),
       createdBy: new mongoose.Types.ObjectId(),
