@@ -3807,6 +3807,45 @@ app.post('/api/super-simple-video', async (req, res) => {
   }
 });
 
+// Delete video endpoint for teachers
+app.delete('/api/videos/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+    const decoded = jwt.verify(token, jwtSecret);
+    
+    const teacherId = decoded.userId || decoded.id || decoded._id;
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ success: false, message: 'Invalid teacher identity' });
+    }
+    
+    const videoId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(videoId)) {
+      return res.status(400).json({ success: false, message: 'Invalid video ID' });
+    }
+    
+    // Find and delete video (only if created by this teacher)
+    const video = await Video.findOneAndDelete({
+      _id: videoId,
+      createdBy: teacherId
+    });
+    
+    if (!video) {
+      return res.status(404).json({ success: false, message: 'Video not found or not authorized to delete' });
+    }
+    
+    res.json({ success: true, message: 'Video deleted successfully' });
+  } catch (error) {
+    console.error('Delete video error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete video', error: error.message });
+  }
+});
+
 // Teacher video creation endpoint - ensures videos persist on teacher dashboard
 app.post('/api/teacher/videos', async (req, res) => {
   try {
