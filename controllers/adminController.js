@@ -986,6 +986,8 @@ export const getTeacherDashboardStats = async (req, res) => {
     console.log('Teacher found:', teacher ? teacher.email : 'Not found');
     console.log('Teacher assignedClassIds:', teacher?.assignedClassIds);
     console.log('Teacher assignedClassIds length:', teacher?.assignedClassIds?.length);
+    console.log('Teacher subjects:', teacher?.subjects);
+    console.log('Teacher subjects length:', teacher?.subjects?.length);
     
     if (!teacher) {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
@@ -1159,6 +1161,9 @@ export const getTeacherDashboardStats = async (req, res) => {
         recentActivity
       }
     });
+    
+    console.log('Sending teacher subjects in response:', teacher.subjects);
+    console.log('Response teacherSubjects:', teacher.subjects || []);
   } catch (error) {
     console.error('Teacher dashboard stats error:', error);
     console.error('Error stack:', error.stack);
