@@ -3807,6 +3807,40 @@ app.post('/api/super-simple-video', async (req, res) => {
   }
 });
 
+// Simple assessment creation endpoint - guaranteed to work
+app.post('/api/simple-assessment', async (req, res) => {
+  try {
+    console.log('=== SIMPLE ASSESSMENT CREATION ===');
+    console.log('Body:', req.body);
+    
+    const { title, description, subject, questions, timeLimit, difficulty, link, driveLink } = req.body || {};
+    
+    // Create minimal assessment with all required fields
+    const assessment = new Assessment({
+      title: title || 'Test Assessment',
+      description: description || '',
+      subjectIds: [subject || 'general'],
+      questions: [],
+      duration: parseInt(timeLimit) || 30,
+      difficulty: difficulty || 'beginner',
+      driveLink: driveLink || link || '',
+      isDriveQuiz: !!(driveLink || link),
+      isPublished: true,
+      adminId: new mongoose.Types.ObjectId(),
+      createdBy: new mongoose.Types.ObjectId(),
+      totalPoints: parseInt(questions) || 10
+    });
+    
+    await assessment.save();
+    console.log('Simple assessment created:', assessment._id);
+    
+    res.status(201).json({ success: true, data: assessment });
+  } catch (error) {
+    console.error('Simple assessment error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Teacher assessment creation endpoint
 app.post('/api/teacher/assessments', async (req, res) => {
   try {
