@@ -1112,24 +1112,11 @@ export const getTeacherDashboardStats = async (req, res) => {
         },
         teacherEmail: teacher.email,
         assignedClasses: assignedClassesDetails,
-        students: await Promise.all(students.map(async (student) => {
-          // Get real exam results for this student
-          const studentExamResults = await ExamResult.find({ studentId: student._id });
-          const totalExams = studentExamResults.length;
-          const lastExamScore = totalExams > 0 ? studentExamResults[studentExamResults.length - 1].score : 0;
-          const averagePerformance = totalExams > 0 
-            ? Math.round(studentExamResults.reduce((sum, result) => sum + result.score, 0) / totalExams)
-            : 0;
-
-          return {
-            id: student._id,
-            name: student.fullName,
-            email: student.email,
-            classNumber: student.classNumber,
-            performance: averagePerformance,
-            lastExamScore: lastExamScore,
-            totalExams: totalExams
-          };
+        students: students.map(student => ({
+          id: student._id,
+          name: student.fullName,
+          email: student.email,
+          classNumber: student.classNumber
         })),
         videos: videos.map(video => ({
           id: video._id,
