@@ -35,14 +35,14 @@ const getStudentAdminId = async (req, res, next) => {
   }
 };
 
-// Get student's videos - filtered by assigned teacher
+// Get student's videos - filtered by assigned teacher (through classes)
 router.get('/videos', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Get student's assigned teacher
+    // Get student's class number
     const student = await User.findById(req.userId);
-    if (!student || !student.assignedTeacher) {
+    if (!student || !student.classNumber) {
       return res.json({
         success: true,
         data: [],
@@ -50,10 +50,25 @@ router.get('/videos', async (req, res) => {
       });
     }
     
-    // Build query - only show videos from student's assigned teacher
+    // Find teachers who have this student's class assigned
+    const teachers = await Teacher.find({
+      assignedClassIds: { $in: [student.classNumber] }
+    }).select('_id');
+    
+    const teacherIds = teachers.map(t => t._id);
+    
+    if (teacherIds.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        videos: []
+      });
+    }
+    
+    // Build query - only show videos from teachers assigned to student's classes
     let query = { 
       isPublished: true,
-      createdBy: student.assignedTeacher
+      createdBy: { $in: teacherIds }
     };
     
     // Add subject filter if provided
@@ -76,14 +91,14 @@ router.get('/videos', async (req, res) => {
   }
 });
 
-// Get student's assessments - filtered by assigned teacher
+// Get student's assessments - filtered by assigned teacher (through classes)
 router.get('/assessments', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Get student's assigned teacher
+    // Get student's class number
     const student = await User.findById(req.userId);
-    if (!student || !student.assignedTeacher) {
+    if (!student || !student.classNumber) {
       return res.json({
         success: true,
         data: [],
@@ -92,10 +107,26 @@ router.get('/assessments', async (req, res) => {
       });
     }
     
-    // Build query - only show assessments from student's assigned teacher
+    // Find teachers who have this student's class assigned
+    const teachers = await Teacher.find({
+      assignedClassIds: { $in: [student.classNumber] }
+    }).select('_id');
+    
+    const teacherIds = teachers.map(t => t._id);
+    
+    if (teacherIds.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        assessments: [],
+        quizzes: []
+      });
+    }
+    
+    // Build query - only show assessments from teachers assigned to student's classes
     let query = { 
       isPublished: true,
-      createdBy: student.assignedTeacher
+      createdBy: { $in: teacherIds }
     };
     
     // Add subject filter if provided
