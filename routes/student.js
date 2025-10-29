@@ -42,7 +42,14 @@ router.get('/videos', async (req, res) => {
     
     // Get student's class number
     const student = await User.findById(req.userId);
+    console.log('Student videos request - Student:', {
+      id: student?._id,
+      classNumber: student?.classNumber,
+      email: student?.email
+    });
+    
     if (!student || !student.classNumber) {
+      console.log('No student or classNumber found');
       return res.json({
         success: true,
         data: [],
@@ -51,13 +58,25 @@ router.get('/videos', async (req, res) => {
     }
     
     // Find teachers who have this student's class assigned
+    // Handle both string and number formats
+    const studentClass = String(student.classNumber);
     const teachers = await Teacher.find({
-      assignedClassIds: { $in: [student.classNumber] }
-    }).select('_id');
+      assignedClassIds: { $in: [studentClass, student.classNumber] }
+    }).select('_id email assignedClassIds');
+    
+    console.log('Found teachers for class:', {
+      studentClass,
+      teachers: teachers.map(t => ({
+        id: t._id,
+        email: t.email,
+        assignedClassIds: t.assignedClassIds
+      }))
+    });
     
     const teacherIds = teachers.map(t => t._id);
     
     if (teacherIds.length === 0) {
+      console.log('No teachers found for student class');
       return res.json({
         success: true,
         data: [],
@@ -76,9 +95,12 @@ router.get('/videos', async (req, res) => {
       query.subjectId = subject;
     }
     
+    console.log('Video query:', query);
     const videos = await Video.find(query)
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 });
+    
+    console.log('Found videos:', videos.length);
     
     res.json({
       success: true,
@@ -98,7 +120,14 @@ router.get('/assessments', async (req, res) => {
     
     // Get student's class number
     const student = await User.findById(req.userId);
+    console.log('Student assessments request - Student:', {
+      id: student?._id,
+      classNumber: student?.classNumber,
+      email: student?.email
+    });
+    
     if (!student || !student.classNumber) {
+      console.log('No student or classNumber found');
       return res.json({
         success: true,
         data: [],
@@ -108,13 +137,25 @@ router.get('/assessments', async (req, res) => {
     }
     
     // Find teachers who have this student's class assigned
+    // Handle both string and number formats
+    const studentClass = String(student.classNumber);
     const teachers = await Teacher.find({
-      assignedClassIds: { $in: [student.classNumber] }
-    }).select('_id');
+      assignedClassIds: { $in: [studentClass, student.classNumber] }
+    }).select('_id email assignedClassIds');
+    
+    console.log('Found teachers for class:', {
+      studentClass,
+      teachers: teachers.map(t => ({
+        id: t._id,
+        email: t.email,
+        assignedClassIds: t.assignedClassIds
+      }))
+    });
     
     const teacherIds = teachers.map(t => t._id);
     
     if (teacherIds.length === 0) {
+      console.log('No teachers found for student class');
       return res.json({
         success: true,
         data: [],
@@ -134,9 +175,12 @@ router.get('/assessments', async (req, res) => {
       query.subjectIds = { $in: [subject] };
     }
     
+    console.log('Assessment query:', query);
     const assessments = await Assessment.find(query)
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 });
+    
+    console.log('Found assessments:', assessments.length);
     
     res.json({
       success: true,
