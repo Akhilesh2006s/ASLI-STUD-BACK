@@ -5,6 +5,7 @@ import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
 import Question from '../models/Question.js';
 import Teacher from '../models/Teacher.js';
+import Subject from '../models/Subject.js';
 import { verifyToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -90,9 +91,32 @@ router.get('/videos', async (req, res) => {
       createdBy: { $in: teacherIds }
     };
     
-    // Add subject filter if provided
+    // Add subject filter if provided (try both ID and name matching)
     if (subject) {
-      query.subjectId = subject;
+      // Try to find subject by ID to get its name
+      try {
+        const subjectDoc = await Subject.findById(subject);
+        if (subjectDoc) {
+          // Match by both ID and name
+          query.$or = [
+            { subjectId: subject },
+            { subjectId: subjectDoc.name },
+            { subjectId: subjectDoc._id.toString() }
+          ];
+        } else {
+          // If subject ID not found, try matching by name directly
+          query.$or = [
+            { subjectId: subject },
+            { subjectId: { $regex: subject, $options: 'i' } }
+          ];
+        }
+      } catch (err) {
+        // Fallback: match by subject ID or name
+        query.$or = [
+          { subjectId: subject },
+          { subjectId: { $regex: subject, $options: 'i' } }
+        ];
+      }
     }
     
     console.log('Video query:', query);
@@ -170,9 +194,32 @@ router.get('/assessments', async (req, res) => {
       createdBy: { $in: teacherIds }
     };
     
-    // Add subject filter if provided
+    // Add subject filter if provided (try both ID and name matching)
     if (subject) {
-      query.subjectIds = { $in: [subject] };
+      // Try to find subject by ID to get its name
+      try {
+        const subjectDoc = await Subject.findById(subject);
+        if (subjectDoc) {
+          // Match by both ID and name in subjectIds array
+          query.$or = [
+            { subjectIds: { $in: [subject] } },
+            { subjectIds: { $in: [subjectDoc.name] } },
+            { subjectIds: { $in: [subjectDoc._id.toString()] } }
+          ];
+        } else {
+          // If subject ID not found, try matching by name directly
+          query.$or = [
+            { subjectIds: { $in: [subject] } },
+            { subjectIds: { $regex: subject, $options: 'i' } }
+          ];
+        }
+      } catch (err) {
+        // Fallback: match by subject ID or name
+        query.$or = [
+          { subjectIds: { $in: [subject] } },
+          { subjectIds: { $regex: subject, $options: 'i' } }
+        ];
+      }
     }
     
     console.log('Assessment query:', query);
