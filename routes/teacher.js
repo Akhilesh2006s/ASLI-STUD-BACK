@@ -222,10 +222,21 @@ router.post('/assessments', async (req, res) => {
 router.get('/students', async (req, res) => {
   try {
     const teacherId = req.teacherId;
-    const students = await User.find({ 
-      role: 'student',
-      assignedTeacher: teacherId 
-    }).select('-password').sort({ createdAt: -1 });
+    
+    // Get teacher's assigned classes
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    // Get students from teacher's assigned classes
+    let students = [];
+    if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
+      students = await User.find({ 
+        role: 'student',
+        classNumber: { $in: teacher.assignedClassIds }
+      }).select('-password').sort({ createdAt: -1 });
+    }
     
     res.json({ success: true, data: students });
   } catch (error) {
@@ -239,14 +250,21 @@ router.get('/students/:studentId/performance', async (req, res) => {
     const { studentId } = req.params;
     const teacherId = req.teacherId;
     
-    // Verify student is assigned to this teacher
+    // Get teacher's assigned classes
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    // Verify student is in teacher's assigned classes
     const student = await User.findOne({ 
       _id: studentId,
-      assignedTeacher: teacherId 
+      role: 'student',
+      classNumber: { $in: teacher.assignedClassIds || [] }
     });
     
     if (!student) {
-      return res.status(404).json({ success: false, message: 'Student not found' });
+      return res.status(404).json({ success: false, message: 'Student not found or not assigned to this teacher' });
     }
 
     // Get student's exam results

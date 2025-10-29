@@ -991,11 +991,14 @@ export const getTeacherDashboardStats = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    // Get only students assigned to this teacher
-    const students = await User.find({ 
-      role: 'student',
-      assignedTeacher: teacherId
-    });
+    // Get students from teacher's assigned classes
+    let students = [];
+    if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
+      students = await User.find({ 
+        role: 'student',
+        classNumber: { $in: teacher.assignedClassIds }
+      });
+    }
 
     // Get class details for assigned classes
     let assignedClassesDetails = [];
