@@ -3565,11 +3565,9 @@ app.post('/api/teacher/videos-working', async (req, res) => {
     const token = authHeader.split(' ')[1];
     console.log('Token:', token);
     
-    // Verify token and get user info
-    console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
-    console.log('JWT_SECRET length:', process.env.JWT_SECRET?.length);
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // Verify token and get user info (fallback secret for local dev)
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+    const decoded = jwt.verify(token, jwtSecret);
     console.log('Decoded token:', decoded);
     
     if (decoded.role !== 'teacher') {
@@ -3579,18 +3577,23 @@ app.post('/api/teacher/videos-working', async (req, res) => {
     const teacherId = decoded.userId;
     console.log('Teacher ID from token:', teacherId);
     
-    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
-    
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
+
+    // Normalize inputs
+    const minutes = Number.isFinite(Number(duration)) ? Number(duration) : 1;
+    const durationSeconds = Math.max(1, Math.floor(minutes)) * 60;
+
     const newVideo = new Video({
-      title,
-      description,
-      subjectId: subject,
-      duration: parseInt(duration) * 60,
-      videoUrl: videoUrl || '',
-      youtubeUrl: videoUrl || '',
+      title: (title || 'Untitled Video').trim(),
+      description: (description || '').trim(),
+      subjectId: (subject || 'general').toString().trim(),
+      duration: durationSeconds,
+      videoUrl: (videoUrl || '').trim(),
+      youtubeUrl: (videoUrl || '').trim(),
       isYouTubeVideo: !!videoUrl,
-      difficulty: difficulty || 'beginner',
+      difficulty: (difficulty || 'beginner').toLowerCase(),
       createdBy: new mongoose.Types.ObjectId(teacherId),
+      // For multi-tenant visibility, prefer teacher's admin if available; fallback to teacherId
       adminId: new mongoose.Types.ObjectId(teacherId),
       isPublished: true
     });
@@ -3598,7 +3601,7 @@ app.post('/api/teacher/videos-working', async (req, res) => {
     await newVideo.save();
     console.log('Working video created successfully:', newVideo._id);
     
-    res.json({ success: true, data: newVideo });
+    res.status(201).json({ success: true, data: newVideo });
   } catch (error) {
     console.error('Working video creation error:', error);
     res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
