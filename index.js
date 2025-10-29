@@ -3715,17 +3715,26 @@ app.post('/api/test-video-simple', async (req, res) => {
     console.log('=== SUPER SIMPLE VIDEO TEST ===');
     console.log('Body:', req.body);
     
-    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
     
-    // Create video with form data or defaults
+    // Normalize inputs
+    const normalizedTitle = (title || '').trim() || 'Untitled Video';
+    const normalizedDescription = (description || '').trim();
+    const normalizedSubject = (subject || '').toString().trim() || 'general';
+    const minutes = Number.isFinite(Number(duration)) ? Number(duration) : 1;
+    const durationSeconds = Math.max(1, Math.floor(minutes)) * 60; // schema expects seconds
+    const normalizedUrl = (videoUrl || '').toString().trim();
+    const normalizedDifficulty = (difficulty || 'beginner').toLowerCase();
+
+    // Create video with safe defaults to avoid validation errors
     const testVideo = new Video({
-      title: title || 'Test Video',
-      description: description || 'Test Description',
-      videoUrl: videoUrl || 'https://test.com',
+      title: normalizedTitle,
+      description: normalizedDescription,
+      videoUrl: normalizedUrl,
       thumbnailUrl: '',
-      duration: parseInt(duration) || 60, // Use form duration or default
-      subjectId: subject || 'test-subject',
-      difficulty: difficulty || 'beginner',
+      duration: durationSeconds,
+      subjectId: normalizedSubject,
+      difficulty: ['beginner','intermediate','advanced'].includes(normalizedDifficulty) ? normalizedDifficulty : 'beginner',
       isPublished: true,
       adminId: new mongoose.Types.ObjectId() // Generate new valid ObjectId
     });
@@ -3733,7 +3742,7 @@ app.post('/api/test-video-simple', async (req, res) => {
     await testVideo.save();
     console.log('Test video created successfully:', testVideo._id);
     
-    res.json({ success: true, message: 'Test video created', data: testVideo });
+    res.status(201).json({ success: true, message: 'Test video created', data: testVideo });
   } catch (error) {
     console.error('Test video error:', error);
     console.error('Error details:', error.message);
@@ -3748,10 +3757,10 @@ app.post('/api/emergency-video-create', async (req, res) => {
     console.log('=== EMERGENCY VIDEO CREATION ===');
     console.log('Body:', req.body);
     
-    const { title, description, subject, duration, videoUrl, difficulty } = req.body;
+    const { title, description, subject, duration, videoUrl, difficulty } = req.body || {};
     
     // Validate required fields
-    if (!title || !subject || !duration) {
+    if (!title || !subject || (!duration && duration !== 0)) {
       return res.status(400).json({ 
         success: false, 
         message: 'Missing required fields: title, subject, duration' 
@@ -3761,14 +3770,17 @@ app.post('/api/emergency-video-create', async (req, res) => {
     // Create a valid ObjectId for adminId (using current timestamp)
     const adminId = new mongoose.Types.ObjectId();
     
+    const minutes = Number.isFinite(Number(duration)) ? Number(duration) : 1;
+    const durationSeconds = Math.max(1, Math.floor(minutes)) * 60;
+
     const videoData = {
-      title: title || 'Untitled Video',
-      description: description || '',
-      videoUrl: videoUrl || '',
+      title: (title || 'Untitled Video').trim(),
+      description: (description || '').trim(),
+      videoUrl: (videoUrl || '').trim(),
       thumbnailUrl: '',
-      duration: parseInt(duration) || 60,
-      subjectId: subject || 'general',
-      difficulty: difficulty || 'beginner',
+      duration: durationSeconds,
+      subjectId: (subject || 'general').toString().trim(),
+      difficulty: (difficulty || 'beginner').toLowerCase(),
       isPublished: true,
       adminId: adminId,
       createdBy: adminId
