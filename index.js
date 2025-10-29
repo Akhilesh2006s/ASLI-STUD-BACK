@@ -3607,14 +3607,20 @@ app.post('/api/teacher/videos-working', async (req, res) => {
       adminId: new mongoose.Types.ObjectId(teacherId),
       isPublished: true
     });
-    
+    // Pre-validate to surface detailed errors
+    const validationError = newVideo.validateSync();
+    if (validationError) {
+      console.error('Video validation error:', validationError);
+      return res.status(400).json({ success: false, message: 'Validation failed', error: validationError.message, details: validationError.errors });
+    }
+
     await newVideo.save();
     console.log('Working video created successfully:', newVideo._id);
     
     res.status(201).json({ success: true, data: newVideo });
   } catch (error) {
     console.error('Working video creation error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to create video', error: error.message, stack: error.stack });
   }
 });
 
@@ -3802,6 +3808,11 @@ app.post('/api/emergency-video-create', async (req, res) => {
     console.log('Creating video with data:', videoData);
     
     const newVideo = new Video(videoData);
+    const validationError = newVideo.validateSync();
+    if (validationError) {
+      console.error('Emergency creation validation error:', validationError);
+      return res.status(400).json({ success: false, message: 'Validation failed', error: validationError.message, details: validationError.errors });
+    }
     await newVideo.save();
     
     console.log('Emergency video created successfully:', newVideo._id);
@@ -3819,7 +3830,8 @@ app.post('/api/emergency-video-create', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to create video', 
-      error: error.message 
+      error: error.message,
+      stack: error.stack
     });
   }
 });
