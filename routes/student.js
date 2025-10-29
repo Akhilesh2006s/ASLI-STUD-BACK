@@ -35,14 +35,14 @@ const getStudentAdminId = async (req, res, next) => {
   }
 };
 
-// Get student's videos - filtered by assigned admin
+// Get student's videos - filtered by assigned teacher
 router.get('/videos', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Get student's assigned admin
+    // Get student's assigned teacher
     const student = await User.findById(req.userId);
-    if (!student || !student.assignedAdmin) {
+    if (!student || !student.assignedTeacher) {
       return res.json({
         success: true,
         data: [],
@@ -50,10 +50,10 @@ router.get('/videos', async (req, res) => {
       });
     }
     
-    // Build query - only show videos from student's assigned admin
+    // Build query - only show videos from student's assigned teacher
     let query = { 
       isPublished: true,
-      adminId: student.assignedAdmin
+      createdBy: student.assignedTeacher
     };
     
     // Add subject filter if provided
@@ -76,14 +76,14 @@ router.get('/videos', async (req, res) => {
   }
 });
 
-// Get student's assessments - filtered by assigned admin
+// Get student's assessments - filtered by assigned teacher
 router.get('/assessments', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Get student's assigned admin
+    // Get student's assigned teacher
     const student = await User.findById(req.userId);
-    if (!student || !student.assignedAdmin) {
+    if (!student || !student.assignedTeacher) {
       return res.json({
         success: true,
         data: [],
@@ -92,10 +92,10 @@ router.get('/assessments', async (req, res) => {
       });
     }
     
-    // Build query - only show assessments from student's assigned admin
+    // Build query - only show assessments from student's assigned teacher
     let query = { 
       isPublished: true,
-      adminId: student.assignedAdmin
+      createdBy: student.assignedTeacher
     };
     
     // Add subject filter if provided
