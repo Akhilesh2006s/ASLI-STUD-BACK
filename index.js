@@ -3807,6 +3807,62 @@ app.post('/api/super-simple-video', async (req, res) => {
   }
 });
 
+// Teacher assessment creation endpoint
+app.post('/api/teacher/assessments', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
+    const decoded = jwt.verify(token, jwtSecret);
+    
+    const teacherId = decoded.userId || decoded.id || decoded._id;
+    if (!teacherId || !mongoose.Types.ObjectId.isValid(teacherId)) {
+      return res.status(400).json({ success: false, message: 'Invalid teacher identity in token' });
+    }
+    
+    const teacherDoc = await Teacher.findById(teacherId).select('_id adminId');
+    if (!teacherDoc) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    const { title, description, subject, questions, timeLimit, difficulty, link } = req.body || {};
+    
+    if (!title || !subject || !questions) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: title, subject, questions' });
+    }
+    
+    const newAssessment = new Assessment({
+      title: String(title).trim(),
+      description: (description || '').trim(),
+      subjectIds: [String(subject).trim()], // Assessment model uses subjectIds array
+      questions: [], // Empty array for now, questions can be added later
+      duration: parseInt(timeLimit) || 30, // Assessment model uses duration, not timeLimit
+      difficulty: (difficulty || 'medium').toLowerCase(),
+      driveLink: (link || '').trim(), // Use driveLink field from model
+      isDriveQuiz: !!link, // Set to true if link is provided
+      isPublished: true,
+      createdBy: teacherDoc._id,
+      adminId: teacherDoc.adminId || teacherDoc._id,
+      totalPoints: parseInt(questions) || 10
+    });
+    
+    const validationError = newAssessment.validateSync();
+    if (validationError) {
+      return res.status(400).json({ success: false, message: 'Validation failed', error: validationError.message, details: validationError.errors });
+    }
+    
+    await newAssessment.save();
+    return res.status(201).json({ success: true, data: newAssessment });
+  } catch (error) {
+    console.error('Teacher assessment creation error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create assessment', error: error.message });
+  }
+});
+
 // Delete video endpoint for teachers
 app.delete('/api/videos/:id', async (req, res) => {
   try {
