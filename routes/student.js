@@ -200,34 +200,56 @@ router.get('/assessments', async (req, res) => {
       try {
         const subjectDoc = await Subject.findById(subject);
         if (subjectDoc) {
-          // Match by both ID and name in subjectIds array
+          // Match by both ID and name in subjectIds array using $in
+          // Also try direct match for backward compatibility
           query.$or = [
             { subjectIds: { $in: [subject] } },
             { subjectIds: { $in: [subjectDoc.name] } },
-            { subjectIds: { $in: [subjectDoc._id.toString()] } }
+            { subjectIds: { $in: [subjectDoc._id.toString()] } },
+            { subjectIds: subject },
+            { subjectIds: subjectDoc.name }
           ];
         } else {
-          // If subject ID not found, try matching by name directly
+          // If subject ID not found, try matching by ID directly
           query.$or = [
             { subjectIds: { $in: [subject] } },
-            { subjectIds: { $regex: subject, $options: 'i' } }
+            { subjectIds: subject }
           ];
         }
       } catch (err) {
-        // Fallback: match by subject ID or name
+        console.error('Error looking up subject:', err);
+        // Fallback: try both $in and direct match
         query.$or = [
           { subjectIds: { $in: [subject] } },
-          { subjectIds: { $regex: subject, $options: 'i' } }
+          { subjectIds: subject }
         ];
       }
     }
     
-    console.log('Assessment query:', query);
+    console.log('Assessment query:', JSON.stringify(query, null, 2));
+    
+    // First, let's see all assessments from these teachers (without subject filter)
+    const allAssessments = await Assessment.find({
+      isPublished: true,
+      createdBy: { $in: teacherIds }
+    }).select('title subjectIds createdBy').limit(5);
+    console.log('All assessments from teachers (sample):', allAssessments.map(a => ({
+      title: a.title,
+      subjectIds: a.subjectIds,
+      createdBy: a.createdBy
+    })));
+    
     const assessments = await Assessment.find(query)
       .populate('createdBy', 'fullName email')
       .sort({ createdAt: -1 });
     
     console.log('Found assessments:', assessments.length);
+    if (assessments.length > 0) {
+      console.log('Sample assessment:', {
+        title: assessments[0].title,
+        subjectIds: assessments[0].subjectIds
+      });
+    }
     
     res.json({
       success: true,
