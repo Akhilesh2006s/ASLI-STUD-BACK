@@ -3755,7 +3755,10 @@ app.post('/api/test-video-simple', async (req, res) => {
       subjectId: normalizedSubject,
       difficulty: ['beginner','intermediate','advanced'].includes(normalizedDifficulty) ? normalizedDifficulty : 'beginner',
       isPublished: true,
-      adminId: new mongoose.Types.ObjectId() // Generate new valid ObjectId
+      adminId: new mongoose.Types.ObjectId(), // Generate new valid ObjectId
+      createdBy: new mongoose.Types.ObjectId(), // Add required createdBy field
+      youtubeUrl: normalizedUrl,
+      isYouTubeVideo: !!normalizedUrl
     });
     
     await testVideo.save();
@@ -3802,7 +3805,9 @@ app.post('/api/emergency-video-create', async (req, res) => {
       difficulty: (difficulty || 'beginner').toLowerCase(),
       isPublished: true,
       adminId: adminId,
-      createdBy: adminId
+      createdBy: adminId, // Set createdBy to adminId for emergency endpoint
+      youtubeUrl: (videoUrl || '').trim(),
+      isYouTubeVideo: !!videoUrl
     };
     
     console.log('Creating video with data:', videoData);
