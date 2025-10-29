@@ -35,15 +35,25 @@ const getStudentAdminId = async (req, res, next) => {
   }
 };
 
-// Get student's videos (show ALL published videos, optionally filtered by subject)
+// Get student's videos - filtered by assigned admin
 router.get('/videos', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Build query - show ALL published videos (not filtered by admin)
+    // Get student's assigned admin
+    const student = await User.findById(req.userId);
+    if (!student || !student.assignedAdmin) {
+      return res.json({
+        success: true,
+        data: [],
+        videos: []
+      });
+    }
+    
+    // Build query - only show videos from student's assigned admin
     let query = { 
       isPublished: true,
-      isActive: true 
+      adminId: student.assignedAdmin
     };
     
     // Add subject filter if provided
@@ -58,7 +68,7 @@ router.get('/videos', async (req, res) => {
     res.json({
       success: true,
       data: videos,
-      videos: videos // Also include videos array for compatibility
+      videos: videos
     });
   } catch (error) {
     console.error('Error fetching student videos:', error);
@@ -66,15 +76,26 @@ router.get('/videos', async (req, res) => {
   }
 });
 
-// Get student's assessments (show ALL published assessments, optionally filtered by subject)
+// Get student's assessments - filtered by assigned admin
 router.get('/assessments', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Build query - show ALL published assessments (not filtered by admin)
+    // Get student's assigned admin
+    const student = await User.findById(req.userId);
+    if (!student || !student.assignedAdmin) {
+      return res.json({
+        success: true,
+        data: [],
+        assessments: [],
+        quizzes: []
+      });
+    }
+    
+    // Build query - only show assessments from student's assigned admin
     let query = { 
       isPublished: true,
-      isActive: true 
+      adminId: student.assignedAdmin
     };
     
     // Add subject filter if provided
@@ -89,8 +110,8 @@ router.get('/assessments', async (req, res) => {
     res.json({
       success: true,
       data: assessments,
-      assessments: assessments, // Also include assessments array for compatibility
-      quizzes: assessments // Also include quizzes array for compatibility
+      assessments: assessments,
+      quizzes: assessments
     });
   } catch (error) {
     console.error('Error fetching student assessments:', error);
