@@ -81,6 +81,16 @@ export const createStudent = async (req, res) => {
     const { email, password, fullName, classNumber, phone } = req.body;
     const adminId = req.adminId;
     
+    // Get admin to inherit board assignment
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    if (!admin.board) {
+      return res.status(400).json({ success: false, message: 'Admin must have a board assigned' });
+    }
+    
     // Check if student already exists
     const existingStudent = await User.findOne({ email });
     if (existingStudent) {
@@ -93,7 +103,7 @@ export const createStudent = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
     
-    // Create new student
+    // Create new student with admin's board
     const newStudent = new User({
       email,
       password: hashedPassword,
@@ -101,6 +111,7 @@ export const createStudent = async (req, res) => {
       classNumber: classNumber || 'Unassigned',
       phone: phone || '',
       role: 'student',
+      board: admin.board, // Inherit board from admin
       isActive: true,
       assignedAdmin: adminId
     });
@@ -1278,6 +1289,76 @@ export const assignSubjects = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to assign subjects' 
+    });
+  }
+};
+
+// Assign subjects to student
+export const assignSubjectsToStudent = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { subjectIds } = req.body;
+    const adminId = req.adminId;
+
+    console.log('Assign subjects to student request:', { studentId, subjectIds, adminId });
+
+    if (!studentId || !subjectIds || !Array.isArray(subjectIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID and subject IDs array are required'
+      });
+    }
+
+    // Find the student
+    const student = await User.findOne({ 
+      _id: studentId,
+      role: 'student',
+      ...(adminId ? { assignedAdmin: adminId } : {})
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found or access denied'
+      });
+    }
+
+    // Verify all subjects belong to the same board as the student
+    const Subject = (await import('../models/Subject.js')).default;
+    const subjects = await Subject.find({ 
+      _id: { $in: subjectIds },
+      board: student.board
+    });
+
+    if (subjects.length !== subjectIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Some subjects do not exist or belong to a different board'
+      });
+    }
+
+    // Update student with assigned subjects
+    const updatedStudent = await User.findByIdAndUpdate(
+      studentId,
+      { 
+        assignedSubjects: subjectIds,
+        updatedAt: new Date()
+      },
+      { new: true }
+    ).populate('assignedSubjects', 'name description board').select('-password');
+
+    console.log('Updated student subjects:', updatedStudent);
+
+    res.json({
+      success: true,
+      message: 'Subjects assigned to student successfully',
+      data: updatedStudent
+    });
+  } catch (error) {
+    console.error('Assign subjects to student error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to assign subjects to student' 
     });
   }
 };

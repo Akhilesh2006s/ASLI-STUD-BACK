@@ -390,7 +390,15 @@ export const getAdminAnalytics = async (req, res) => {
 // Create New Admin
 export const createAdmin = async (req, res) => {
   try {
-    const { name, email, permissions } = req.body;
+    const { name, email, permissions, board, schoolName } = req.body;
+    
+    if (!board || !['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(board)) {
+      return res.status(400).json({ success: false, message: 'Valid board is required' });
+    }
+    
+    if (!schoolName) {
+      return res.status(400).json({ success: false, message: 'School name is required' });
+    }
     
     // Check if admin already exists
     const existingAdmin = await User.findOne({ email });
@@ -405,6 +413,8 @@ export const createAdmin = async (req, res) => {
       email,
       password: hashedPassword,
       role: 'admin',
+      board: board.toUpperCase(),
+      schoolName: schoolName.trim(),
       permissions: permissions || [],
       isActive: true
     });
@@ -418,6 +428,8 @@ export const createAdmin = async (req, res) => {
         id: newAdmin._id,
         name: newAdmin.fullName,
         email: newAdmin.email,
+        board: newAdmin.board,
+        schoolName: newAdmin.schoolName,
         permissions: newAdmin.permissions,
         status: 'Active',
         joinDate: newAdmin.createdAt
@@ -432,31 +444,78 @@ export const createAdmin = async (req, res) => {
 // Update Admin
 export const updateAdmin = async (req, res) => {
   try {
-    const { permissions, isActive } = req.body;
-    const admin = await User.findByIdAndUpdate(
-      req.params.id,
-      { permissions, isActive },
-      { new: true }
-    );
+    const { name, email, permissions, isActive, board, schoolName } = req.body;
+    const adminId = req.params.id;
     
-    if (!admin) {
+    console.log('📝 Updating admin:', adminId, { name, email, board, schoolName, isActive });
+    
+    // Check if admin exists
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      console.error('Admin not found:', adminId);
       return res.status(404).json({ success: false, message: 'Admin not found' });
     }
+
+    // Prepare update object
+    const updateData = {};
+    if (name !== undefined && name !== null && name.trim() !== '') {
+      updateData.fullName = name.trim();
+    }
+    if (email !== undefined && email !== null && email.trim() !== '') {
+      const emailLower = email.toLowerCase().trim();
+      // Check if email is being changed and if it's already taken
+      if (emailLower !== admin.email.toLowerCase()) {
+        const existingUser = await User.findOne({ email: emailLower });
+        if (existingUser && existingUser._id.toString() !== adminId) {
+          return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+        updateData.email = emailLower;
+      }
+    }
+    if (permissions !== undefined) updateData.permissions = permissions;
+    if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+    if (board !== undefined && board !== null && board !== '') {
+      const boardUpper = board.toUpperCase();
+      if (!['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(boardUpper)) {
+        return res.status(400).json({ success: false, message: `Invalid board code: ${board}. Must be one of: CBSE_AP, CBSE_TS, STATE_AP, STATE_TS` });
+      }
+      updateData.board = boardUpper;
+    }
+    if (schoolName !== undefined && schoolName !== null) {
+      updateData.schoolName = schoolName.trim();
+    }
+
+    console.log('Update data:', updateData);
+
+    const updatedAdmin = await User.findByIdAndUpdate(
+      adminId,
+      updateData,
+      { new: true, runValidators: false } // Using runValidators: false to avoid board enum issues
+    );
+    
+    if (!updatedAdmin) {
+      return res.status(500).json({ success: false, message: 'Failed to update admin' });
+    }
+
+    console.log('✅ Admin updated successfully:', updatedAdmin.email, updatedAdmin.board);
     
     res.json({
       success: true,
       message: 'Admin updated successfully',
       data: {
-        id: admin._id,
-        name: admin.fullName,
-        email: admin.email,
-        permissions: admin.permissions,
-        status: admin.isActive ? 'Active' : 'Inactive'
+        id: updatedAdmin._id,
+        name: updatedAdmin.fullName,
+        email: updatedAdmin.email,
+        board: updatedAdmin.board,
+        schoolName: updatedAdmin.schoolName,
+        permissions: updatedAdmin.permissions,
+        status: updatedAdmin.isActive ? 'Active' : 'Inactive'
       }
     });
   } catch (error) {
-    console.error('Update admin error:', error);
-    res.status(500).json({ success: false, message: 'Failed to update admin' });
+    console.error('❌ Update admin error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Failed to update admin', error: error.message });
   }
 };
 
@@ -695,6 +754,145 @@ export const createCourse = async (req, res) => {
   } catch (error) {
     console.error('Create course error:', error);
     res.status(500).json({ success: false, message: 'Failed to create course' });
+  }
+};
+
+// Get Real-time Analytics with Top Scorers and Low-performing Admins
+export const getRealTimeAnalytics = async (req, res) => {
+  try {
+    // Get all exam results with populated user and exam data
+    const allResults = await ExamResult.find({})
+      .populate('userId', 'fullName email')
+      .populate('examId', 'title examType')
+      .populate('adminId', 'fullName email')
+      .sort({ completedAt: -1 })
+      .limit(1000); // Limit for performance
+    
+    // Get top scorers per exam
+    const examTopScorers = {};
+    allResults.forEach(result => {
+      const examId = result.examId?._id?.toString() || result.examId?.toString();
+      const examTitle = result.examId?.title || result.examTitle || 'Unknown Exam';
+      
+      if (!examTopScorers[examId]) {
+        examTopScorers[examId] = {
+          examId,
+          examTitle,
+          topScorers: []
+        };
+      }
+      
+      examTopScorers[examId].topScorers.push({
+        studentName: result.userId?.fullName || 'Unknown',
+        studentEmail: result.userId?.email || 'unknown@email.com',
+        marks: result.obtainedMarks,
+        totalMarks: result.totalMarks,
+        percentage: result.percentage,
+        completedAt: result.completedAt
+      });
+    });
+    
+    // Sort top scorers for each exam and get top 5
+    Object.keys(examTopScorers).forEach(examId => {
+      examTopScorers[examId].topScorers.sort((a, b) => b.percentage - a.percentage);
+      examTopScorers[examId].topScorers = examTopScorers[examId].topScorers.slice(0, 5);
+    });
+    
+    // Get admin performance metrics
+    const adminPerformance = {};
+    allResults.forEach(result => {
+      const adminId = result.adminId?._id?.toString() || result.adminId?.toString();
+      if (!adminId) return;
+      
+      if (!adminPerformance[adminId]) {
+        adminPerformance[adminId] = {
+          adminId,
+          adminName: result.adminId?.fullName || result.adminId?.email || 'Unknown Admin',
+          adminEmail: result.adminId?.email || 'unknown@email.com',
+          totalStudents: new Set(),
+          totalExams: 0,
+          totalMarksObtained: 0,
+          totalMarksPossible: 0,
+          studentResults: []
+        };
+      }
+      
+      const admin = adminPerformance[adminId];
+      admin.totalExams += 1;
+      admin.totalMarksObtained += result.obtainedMarks;
+      admin.totalMarksPossible += result.totalMarks;
+      
+      if (result.userId?._id) {
+        admin.totalStudents.add(result.userId._id.toString());
+      }
+      
+      admin.studentResults.push({
+        studentName: result.userId?.fullName || 'Unknown',
+        percentage: result.percentage,
+        marks: result.obtainedMarks,
+        totalMarks: result.totalMarks
+      });
+    });
+    
+    // Calculate average performance per admin
+    const adminAnalytics = Object.values(adminPerformance).map(admin => {
+      const avgPercentage = admin.totalMarksPossible > 0 
+        ? (admin.totalMarksObtained / admin.totalMarksPossible) * 100 
+        : 0;
+      
+      // Calculate average student performance
+      const avgStudentPerformance = admin.studentResults.length > 0
+        ? admin.studentResults.reduce((sum, r) => sum + r.percentage, 0) / admin.studentResults.length
+        : 0;
+      
+      return {
+        adminId: admin.adminId,
+        adminName: admin.adminName,
+        adminEmail: admin.adminEmail,
+        totalStudents: admin.totalStudents.size,
+        totalExams: admin.totalExams,
+        averageScore: avgPercentage.toFixed(1),
+        averageStudentPerformance: avgStudentPerformance.toFixed(1),
+        totalMarksObtained: admin.totalMarksObtained,
+        totalMarksPossible: admin.totalMarksPossible
+      };
+    });
+    
+    // Identify low-performing admins (below 50% average)
+    const lowPerformingAdmins = adminAnalytics
+      .filter(admin => parseFloat(admin.averageScore) < 50)
+      .sort((a, b) => parseFloat(a.averageScore) - parseFloat(b.averageScore));
+    
+    // Get overall analytics
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalExams = await Exam.countDocuments();
+    const overallAverage = allResults.length > 0
+      ? allResults.reduce((sum, r) => sum + r.percentage, 0) / allResults.length
+      : 0;
+    
+    res.json({
+      success: true,
+      data: {
+        topScorersByExam: Object.values(examTopScorers),
+        lowPerformingAdmins,
+        adminAnalytics,
+        overallMetrics: {
+          totalStudents,
+          totalExams,
+          totalExamResults: allResults.length,
+          overallAverage: overallAverage.toFixed(1)
+        },
+        recentActivity: allResults.slice(0, 10).map(result => ({
+          examTitle: result.examId?.title || result.examTitle,
+          studentName: result.userId?.fullName || 'Unknown',
+          score: result.percentage.toFixed(1),
+          completedAt: result.completedAt
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Real-time analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch real-time analytics' });
   }
 };
 

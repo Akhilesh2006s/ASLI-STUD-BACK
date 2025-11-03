@@ -48,10 +48,21 @@ const examSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  createdByRole: {
+    type: String,
+    enum: ['admin', 'super-admin'],
+    default: 'admin'
+  },
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false // Not required for super-admin created exams
+  },
+  board: {
+    type: String,
+    required: true,
+    enum: ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'],
+    uppercase: true
   },
   questions: [{
     type: mongoose.Schema.Types.ObjectId,
@@ -75,8 +86,11 @@ examSchema.pre('save', function(next) {
 
 // Indexes for better performance
 examSchema.index({ adminId: 1 }); // Multi-tenant index
+examSchema.index({ board: 1 }); // Board-based index
+examSchema.index({ createdByRole: 1 }); // Role-based index
 examSchema.index({ examType: 1 });
 examSchema.index({ isActive: 1 });
 examSchema.index({ createdAt: -1 });
+examSchema.index({ board: 1, isActive: 1 }); // Compound index for board + active queries
 
 export default mongoose.model('Exam', examSchema);

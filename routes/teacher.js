@@ -246,6 +246,107 @@ router.get('/students', async (req, res) => {
   }
 });
 
+// Get all students with their recent performance
+router.get('/students/performance', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    
+    // Get teacher's assigned classes
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    // Get students from teacher's assigned classes AND assigned to the same admin as the teacher
+    let students = [];
+    if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
+      students = await User.find({ 
+        role: 'student',
+        classNumber: { $in: teacher.assignedClassIds },
+        assignedAdmin: teacher.adminId  // Filter by teacher's admin
+      }).select('-password').sort({ createdAt: -1 });
+    }
+
+    // Get student IDs
+    const studentIds = students.map(s => s._id);
+
+    // Import ExamResult model
+    const ExamResult = (await import('../models/ExamResult.js')).default;
+
+    // Get recent exam results for all students (latest result per exam)
+    const examResults = await ExamResult.find({ 
+      userId: { $in: studentIds }
+    }).sort({ completedAt: -1 });
+
+    // Group exam results by student
+    const performanceMap = new Map();
+    examResults.forEach(result => {
+      const userId = result.userId.toString();
+      if (!performanceMap.has(userId)) {
+        performanceMap.set(userId, {
+          recentExam: null,
+          recentMarks: null,
+          recentPercentage: null,
+          totalExams: 0,
+          averageMarks: 0
+        });
+      }
+      const perf = performanceMap.get(userId);
+      perf.totalExams += 1;
+      
+      // Set the most recent exam result
+      if (!perf.recentExam || new Date(result.completedAt) > new Date(perf.recentExam.completedAt)) {
+        perf.recentExam = result;
+        perf.recentMarks = result.obtainedMarks;
+        perf.recentPercentage = result.percentage;
+      }
+    });
+
+    // Calculate average marks for each student
+    const marksByStudent = {};
+    examResults.forEach(result => {
+      const userId = result.userId.toString();
+      if (!marksByStudent[userId]) marksByStudent[userId] = [];
+      marksByStudent[userId].push(result.obtainedMarks);
+    });
+
+    Object.keys(marksByStudent).forEach(userId => {
+      const marks = marksByStudent[userId];
+      const perf = performanceMap.get(userId);
+      if (perf) {
+        perf.averageMarks = marks.reduce((a, b) => a + b, 0) / marks.length;
+      }
+    });
+
+    // Attach performance data to students
+    const studentsWithPerformance = students.map(student => {
+      const perf = performanceMap.get(student._id.toString()) || {
+        recentExam: null,
+        recentMarks: null,
+        recentPercentage: null,
+        totalExams: 0,
+        averageMarks: 0
+      };
+      
+      return {
+        ...student.toObject(),
+        performance: {
+          recentExamTitle: perf.recentExam?.examTitle || null,
+          recentMarks: perf.recentMarks,
+          recentPercentage: perf.recentPercentage,
+          totalExams: perf.totalExams,
+          averageMarks: Math.round(perf.averageMarks * 100) / 100
+        }
+      };
+    });
+    
+    res.json({ success: true, data: studentsWithPerformance });
+  } catch (error) {
+    console.error('Get students performance error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch students performance' });
+  }
+});
+
 router.get('/students/:studentId/performance', async (req, res) => {
   try {
     const { studentId } = req.params;
@@ -269,8 +370,11 @@ router.get('/students/:studentId/performance', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Student not found or not assigned to this teacher' });
     }
 
-    // Get student's exam results
-    const examResults = await ExamResult.find({ studentId }).sort({ createdAt: -1 });
+    // Import ExamResult model
+    const ExamResult = (await import('../models/ExamResult.js')).default;
+
+    // Get student's exam results (using userId, not studentId)
+    const examResults = await ExamResult.find({ userId: studentId }).sort({ completedAt: -1 });
     
     res.json({ success: true, data: examResults });
   } catch (error) {

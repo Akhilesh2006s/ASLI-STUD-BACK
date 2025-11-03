@@ -57,7 +57,13 @@ const questionSchema = new mongoose.Schema({
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: false // Not required for super-admin created questions
+  },
+  board: {
+    type: String,
+    required: true,
+    enum: ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'],
+    uppercase: true
   },
   isActive: {
     type: Boolean,

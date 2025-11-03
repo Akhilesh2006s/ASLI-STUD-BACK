@@ -11,7 +11,7 @@ class GeminiService {
   async generateResponse(message, context = {}, chatHistory = []) {
     try {
       // Build context-aware prompt
-      let systemPrompt = `You are an AI tutor for CogniLearn, an educational platform. You help students with their studies across various subjects including Physics, Chemistry, Mathematics, and Biology.
+      let systemPrompt = `You are an AI tutor for Asli Learn, an educational platform. You help students with their studies across various subjects including Physics, Chemistry, Mathematics, and Biology.
 
 Your role is to:
 1. Provide clear, educational explanations

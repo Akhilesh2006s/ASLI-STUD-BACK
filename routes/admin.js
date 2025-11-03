@@ -27,25 +27,18 @@ import {
   deleteTeacher,
   assignSubjects,
   assignClasses,
+  assignSubjectsToStudent,
   getTeacherDashboardStats,
   getVideos,
-  createVideo,
-  updateVideo,
-  deleteVideo,
   getAssessments,
-  createAssessment,
-  updateAssessment,
-  deleteAssessment,
-  getExams,
-  createExam,
-  updateExam,
-  deleteExam,
-  getExamQuestions,
-  createQuestion,
-  updateQuestion,
-  deleteQuestion,
   getAnalytics
 } from '../controllers/adminController.js';
+import {
+  getViewableExams,
+  getExamDetails,
+  getStudentExamResults,
+  getExamPerformanceAnalytics
+} from '../controllers/adminExamViewController.js';
 
 const router = express.Router();
 
@@ -74,6 +67,7 @@ router.get('/students', getStudents);
 router.post('/students', addAdminIdToBody, createStudent);
 router.put('/students/:id', verifyDataOwnership(User), updateStudent);
 router.delete('/students/:id', verifyDataOwnership(User), deleteStudent);
+router.post('/students/:studentId/assign-subjects', assignSubjectsToStudent);
 
 // Teacher Management Routes
 router.get('/teachers', getTeachers);
@@ -83,17 +77,15 @@ router.delete('/teachers/:id', verifyDataOwnership(Teacher), deleteTeacher);
 router.post('/teachers/:teacherId/assign-subjects', assignSubjects);
 router.post('/teachers/:teacherId/assign-classes', assignClasses);
 
-// Video/Course Management Routes
-router.get('/videos', getVideos);
-router.post('/videos', addAdminIdToBody, createVideo);
-router.put('/videos/:id', verifyDataOwnership(Video), updateVideo);
-router.delete('/videos/:id', verifyDataOwnership(Video), deleteVideo);
+// Video/Course Management Routes - REMOVED (Admins cannot create content)
+// router.post('/videos', addAdminIdToBody, createVideo);
+// router.put('/videos/:id', verifyDataOwnership(Video), updateVideo);
+// router.delete('/videos/:id', verifyDataOwnership(Video), deleteVideo);
 
-// Assessment Management Routes
-router.get('/assessments', getAssessments);
-router.post('/assessments', addAdminIdToBody, createAssessment);
-router.put('/assessments/:id', verifyDataOwnership(Assessment), updateAssessment);
-router.delete('/assessments/:id', verifyDataOwnership(Assessment), deleteAssessment);
+// Assessment Management Routes - REMOVED (Admins cannot create assessments)
+// router.post('/assessments', addAdminIdToBody, createAssessment);
+// router.put('/assessments/:id', verifyDataOwnership(Assessment), updateAssessment);
+// router.delete('/assessments/:id', verifyDataOwnership(Assessment), deleteAssessment);
 
 // CSV Upload for Students
 router.post('/students/upload', upload.single('file'), async (req, res) => {
@@ -207,16 +199,14 @@ router.post('/students/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Exam Management Routes
-router.get('/exams', verifyToken, authorizeRoles('admin'), extractAdminId, getExams);
-router.post('/exams', verifyToken, authorizeRoles('admin'), extractAdminId, addAdminIdToBody, createExam);
-router.put('/exams/:id', verifyToken, authorizeRoles('admin'), extractAdminId, verifyDataOwnership(Exam), updateExam);
-router.delete('/exams/:id', verifyToken, authorizeRoles('admin'), extractAdminId, verifyDataOwnership(Exam), deleteExam);
+// Exam View Routes (Admins can only view Super Admin created exams)
+router.get('/exams/viewable', getViewableExams); // View Super Admin created exams for their board
+router.get('/exams/:examId/view', getExamDetails); // View exam details
+router.get('/exam-results', getStudentExamResults); // View student exam results with filters
+router.get('/exams/:examId/analytics', getExamPerformanceAnalytics); // View exam performance analytics
 
-// Question Management Routes
-router.get('/exams/:examId/questions', verifyToken, authorizeRoles('admin'), extractAdminId, getExamQuestions);
-router.post('/exams/:examId/questions', verifyToken, authorizeRoles('admin'), extractAdminId, addAdminIdToBody, createQuestion);
-router.put('/questions/:questionId', verifyToken, authorizeRoles('admin'), extractAdminId, verifyDataOwnership(Question), updateQuestion);
-router.delete('/questions/:questionId', verifyToken, authorizeRoles('admin'), extractAdminId, verifyDataOwnership(Question), deleteQuestion);
+// Removed: POST /exams, PUT /exams/:id, DELETE /exams/:id
+// Removed: POST /exams/:examId/questions, PUT /questions/:questionId, DELETE /questions/:questionId
+// Admins can NO LONGER create, edit, or delete exams
 
 export default router;

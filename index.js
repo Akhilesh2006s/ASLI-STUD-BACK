@@ -47,8 +47,11 @@ mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => {
+.then(async () => {
   console.log('Connected to MongoDB Atlas');
+  // Initialize boards
+  const { initializeBoards } = await import('./controllers/boardController.js');
+  await initializeBoards();
   // Seed some sample subjects if none exist
   seedSampleData();
 })
@@ -162,6 +165,15 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Request logging middleware (after body parser)
+app.use((req, res, next) => {
+  if (req.path.includes('/api/auth/login')) {
+    console.log('📥 Incoming request:', req.method, req.path);
+    console.log('📦 Request body:', req.body);
+  }
+  next();
+});
 
 // Add CORS headers to all responses
 app.use((req, res, next) => {
@@ -421,95 +433,217 @@ app.options('/api/auth/login', (req, res) => {
   res.sendStatus(200);
 });
 
-app.post('/api/auth/login', (req, res, next) => {
-  console.log('Login attempt:', { email: req.body.email, timestamp: new Date().toISOString() });
-  
-  // Check for Super Admin credentials first
-  if (req.body.email === 'Amenity@gmail.com' && req.body.password === 'Amenity') {
-    console.log('Super Admin login detected');
-    const token = jwt.sign(
-      { 
-        id: 'super-admin-001',
-        email: 'Amenity@gmail.com',
-        fullName: 'Super Admin',
-        role: 'super-admin'
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '24h' }
-    );
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    console.log('=== LOGIN REQUEST ===');
+    console.log('Request body:', req.body);
+    console.log('Request headers:', req.headers);
+    console.log('Content-Type:', req.headers['content-type']);
     
-    return res.json({
-      success: true,
-      token,
-      user: {
-        id: 'super-admin-001',
-        email: 'Amenity@gmail.com',
-        fullName: 'Super Admin',
-        role: 'super-admin'
-      }
-    });
-  }
-  
-  passport.authenticate('local', async (err, user, info) => {
-    if (err) {
-      console.error('Login error:', err);
-      return res.status(500).json({ message: 'Internal server error' });
-    }
-    if (!user) {
-      console.log('Login failed:', info.message);
-      return res.status(401).json({ message: info.message });
+    // Check if MongoDB is connected
+    if (mongoose.connection.readyState !== 1) {
+      console.error('MongoDB not connected. Connection state:', mongoose.connection.readyState);
+      return res.status(503).json({ message: 'Database not connected. Please try again.' });
     }
     
-    console.log('Login successful for user:', user.email);
-    req.logIn(user, async (err) => {
-      if (err) {
-        console.error('Session creation error:', err);
-        return res.status(500).json({ message: 'Login failed' });
-      }
-      
-      console.log('Session created successfully:', {
-        sessionID: req.sessionID,
-        isAuthenticated: req.isAuthenticated(),
-        user: req.user ? req.user.email : 'No user',
-        sessionData: req.session,
-        cookies: req.headers.cookie
-      });
-      
-      let userData = { 
-        id: user._id, 
-        email: user.email, 
-        fullName: user.fullName, 
-        role: user.role 
-      };
-
-      // If user is a teacher, fetch their subjects
-      if (user.role === 'teacher') {
-        console.log('Fetching teacher subjects for:', user.email);
-        const teacher = await Teacher.findById(user._id).populate('subjects');
-        if (teacher) {
-          console.log('Teacher found with subjects:', teacher.subjects?.length || 0);
-          userData.subjects = teacher.subjects || [];
-        }
-      }
-      
-      // Create JWT token
+    // Check if body is parsed
+    if (!req.body) {
+      console.error('req.body is undefined or null');
+      return res.status(400).json({ message: 'Invalid request body' });
+    }
+    
+    const { email, password } = req.body;
+    
+    console.log('Extracted email:', email);
+    console.log('Extracted password:', password ? '***' : 'undefined');
+    
+    if (!email || !password) {
+      console.error('Missing email or password');
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+    
+    // Check for Super Admin credentials first
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+      console.log('Super Admin login detected');
       const token = jwt.sign(
         { 
-          userId: user._id, 
-          email: user.email, 
-          role: user.role 
+          id: 'super-admin-001',
+          userId: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
+          role: 'super-admin'
         },
         process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
-
-      res.json({ 
-        message: 'Login successful',
-        user: userData,
-        token: token
+      
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: 'super-admin-001',
+          _id: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
+          role: 'super-admin'
+        }
       });
+    }
+    
+    // Check for specific admin credentials
+    if (email === 'amenityforge@gmail.com' && password === 'Amenity') {
+      let adminUser = await User.findOne({ email: 'amenityforge@gmail.com' });
+      
+      if (!adminUser) {
+        const hashedPassword = await bcrypt.hash('Amenity', 12);
+        adminUser = new User({
+          email: 'amenityforge@gmail.com',
+          password: hashedPassword,
+          fullName: 'Admin User',
+          role: 'admin',
+          isActive: true
+        });
+        await adminUser.save();
+      }
+      
+      // Update last login without triggering full document validation
+      await User.findByIdAndUpdate(adminUser._id, { lastLogin: new Date() }, { runValidators: false });
+      
+      const token = jwt.sign(
+        { 
+          userId: adminUser._id.toString(), 
+          id: adminUser._id.toString(),
+          email: adminUser.email, 
+          role: adminUser.role 
+        },
+        process.env.JWT_SECRET || 'your-secret-key',
+        { expiresIn: '24h' }
+      );
+      
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: adminUser._id.toString(),
+          _id: adminUser._id.toString(),
+          email: adminUser.email,
+          fullName: adminUser.fullName,
+          role: adminUser.role
+        }
+      });
+    }
+
+    // Check Teacher model first
+    let teacher = null;
+    try {
+      teacher = await Teacher.findOne({ email: email.toLowerCase() });
+    } catch (teacherError) {
+      console.error('Error querying Teacher model:', teacherError);
+      // Continue to user check if teacher query fails
+    }
+    
+    if (teacher) {
+      console.log('Teacher found:', teacher.email, 'Active:', teacher.isActive);
+      const isValidPassword = await bcrypt.compare(password, teacher.password || '');
+      
+      if (isValidPassword && teacher.isActive) {
+        // Update last login
+        teacher.lastLogin = new Date();
+        await teacher.save();
+        
+        const token = jwt.sign(
+          { 
+            userId: teacher._id.toString(),
+            id: teacher._id.toString(),
+            email: teacher.email, 
+            role: 'teacher' 
+          },
+          process.env.JWT_SECRET || 'your-secret-key',
+          { expiresIn: '24h' }
+        );
+        
+        // Fetch teacher subjects if needed
+        let subjects = [];
+        try {
+          const teacherWithSubjects = await Teacher.findById(teacher._id).populate('subjects');
+          if (teacherWithSubjects && teacherWithSubjects.subjects) {
+            subjects = teacherWithSubjects.subjects;
+          }
+        } catch (err) {
+          console.log('Error fetching teacher subjects:', err);
+        }
+        
+        return res.json({
+          success: true,
+          token,
+          user: {
+            id: teacher._id.toString(),
+            _id: teacher._id.toString(),
+            email: teacher.email,
+            fullName: teacher.fullName,
+            role: 'teacher',
+            subjects: subjects
+          }
+        });
+      }
+    }
+
+    // Regular user authentication
+    let user = null;
+    try {
+      user = await User.findOne({ email: email.toLowerCase() });
+    } catch (userError) {
+      console.error('Error querying User model:', userError);
+      throw userError; // Re-throw if User query fails
+    }
+    
+    if (!user) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.password || '');
+    if (!isValidPassword) {
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+    
+    if (!user.isActive) {
+      return res.status(401).json({ message: 'Account is deactivated' });
+    }
+
+    // Update last login without triggering full document validation (avoids board enum validation)
+    await User.findByIdAndUpdate(user._id, { lastLogin: new Date() }, { runValidators: false });
+
+    const token = jwt.sign(
+      { 
+        userId: user._id.toString(),
+        id: user._id.toString(),
+        email: user.email, 
+        role: user.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '24h' }
+    );
+
+    res.json({ 
+      success: true,
+      token,
+      user: {
+        id: user._id.toString(),
+        _id: user._id.toString(),
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role
+      }
     });
-  })(req, res, next);
+  } catch (error) {
+    console.error('Login error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Internal server error', 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -1033,10 +1167,28 @@ app.delete('/api/admin/teachers/:id', async (req, res) => {
   }
 });
 
-// Subject management endpoints
+// Subject management endpoints - filter by admin's board
 app.get('/api/admin/subjects', async (req, res) => {
   try {
-    const subjects = await Subject.find().populate('createdBy', 'fullName email').sort({ createdAt: -1 });
+    // Get admin's board from token (if admin) or return all (if super-admin)
+    let adminBoard = null;
+    if (req.user && req.user.role === 'admin') {
+      const admin = await User.findById(req.user.userId || req.user.id);
+      if (admin && admin.board) {
+        adminBoard = admin.board;
+      }
+    }
+    
+    // Build query - filter by board if admin, show all if super-admin
+    const query = adminBoard ? { board: adminBoard, isActive: true } : { isActive: true };
+    
+    const subjects = await Subject.find(query)
+      .populate('createdBy', 'fullName email')
+      .sort({ name: 1 });
+    
+    console.log(`📚 Admin subjects endpoint: Found ${subjects.length} subjects for board: ${adminBoard || 'ALL'}`);
+    console.log('Admin subject names:', subjects.map(s => s.name));
+    
     res.json(subjects);
   } catch (error) {
     console.error('Failed to fetch subjects:', error);
@@ -1311,20 +1463,26 @@ app.delete('/api/admin/exams/:id', async (req, res) => {
 // });
 
 // Save exam results
+// Update exam result to include board
 app.post('/api/student/exam-results', requireAuth, async (req, res) => {
   try {
     const { examId, examTitle, totalQuestions, correctAnswers, wrongAnswers, unattempted, totalMarks, obtainedMarks, percentage, timeTaken, subjectWiseScore, answers } = req.body;
     
-    // Get student's assigned admin
+    // Get student's assigned admin and board
     const student = await User.findById(req.user.id);
-    if (!student || !student.assignedAdmin) {
-      return res.status(400).json({ message: 'Student not assigned to any admin' });
+    if (!student) {
+      return res.status(400).json({ message: 'Student not found' });
+    }
+    
+    if (!student.board) {
+      return res.status(400).json({ message: 'Student board not assigned' });
     }
     
     const resultData = {
       examId,
       userId: req.user.id,
-      adminId: student.assignedAdmin,
+      adminId: student.assignedAdmin || null, // May be null for super-admin created exams
+      board: student.board, // Add board to result
       examTitle,
       totalQuestions,
       correctAnswers,
@@ -1346,7 +1504,10 @@ app.post('/api/student/exam-results', requireAuth, async (req, res) => {
     const examResult = new ExamResult(resultData);
     await examResult.save();
     
-    console.log('Exam result saved:', resultData);
+    console.log('✅ Exam result saved successfully');
+    console.log('📋 ExamId:', examResult.examId?.toString());
+    console.log('📋 UserId:', examResult.userId?.toString());
+    console.log('📋 Board:', examResult.board);
     
     res.status(201).json({ 
       success: true,
@@ -1359,34 +1520,26 @@ app.post('/api/student/exam-results', requireAuth, async (req, res) => {
   }
 });
 
-// Get student exam results
+// Get student exam results - This is now handled by student.js routes
+// Keeping this as a fallback but student.js route should be used instead
 app.get('/api/student/exam-results', requireAuth, async (req, res) => {
   try {
-    // For now, return mock data. In a real app, you'd fetch from a Results collection
-    const mockResults = [
-      {
-        examId: '68fa67db5a9b19d772d960c5',
-        examTitle: 'JEE Main Practice Test 1',
-        totalQuestions: 10,
-        correctAnswers: 8,
-        wrongAnswers: 2,
-        unattempted: 0,
-        totalMarks: 40,
-        obtainedMarks: 32,
-        percentage: 80,
-        timeTaken: 1800,
-        subjectWiseScore: {
-          maths: { correct: 3, total: 4, marks: 12 },
-          physics: { correct: 3, total: 3, marks: 12 },
-          chemistry: { correct: 2, total: 3, marks: 8 }
-        }
-      }
-    ];
+    console.log('📋 Fetching exam results for student:', req.user.id);
     
-    res.json(mockResults);
+    const ExamResult = (await import('./models/ExamResult.js')).default;
+    const results = await ExamResult.find({ userId: req.user.id })
+      .populate('examId', 'title examType')
+      .sort({ completedAt: -1 });
+    
+    console.log(`✅ Found ${results.length} exam results`);
+    
+    res.json({
+      success: true,
+      data: results
+    });
   } catch (error) {
     console.error('Failed to fetch exam results:', error);
-    res.status(500).json({ message: 'Failed to fetch results' });
+    res.status(500).json({ success: false, message: 'Failed to fetch results', error: error.message });
   }
 });
 
@@ -2975,10 +3128,13 @@ app.get('/api/subjects', async (req, res) => {
 app.get('/api/subjects/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const subject = await Subject.findById(id)
-      .populate('videos', 'title description duration videoUrl youtubeUrl isYouTubeVideo thumbnailUrl views createdAt')
-      .populate('quizzes', 'question options correctAnswer difficulty duration createdAt')
-      .populate('createdBy', 'fullName');
+    
+    // Validate ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid subject ID format' });
+    }
+    
+    const subject = await Subject.findById(id);
     
     if (!subject) {
       return res.status(404).json({ success: false, message: 'Subject not found' });
@@ -2987,7 +3143,12 @@ app.get('/api/subjects/:id', async (req, res) => {
     res.json({ success: true, subject });
   } catch (error) {
     console.error('Error fetching subject:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch subject' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch subject',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -4074,7 +4235,9 @@ app.post('/api/lesson-plan/generate', async (req, res) => {
       });
     }
 
-    const prompt = `Create a detailed lesson plan for IIT JEE Mains preparation in ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
+    const prompt = `Hello there! I'm your AI tutor from **Asli Learn**. I'm here to help you excel in your IIT JEE Mains preparation. Let's get this detailed lesson plan ready for "${topic}."
+
+Create a detailed lesson plan for IIT JEE Mains preparation in ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
 
 This is for IIT JEE Mains coaching, so please include:
 1. Learning Objectives (JEE-specific)

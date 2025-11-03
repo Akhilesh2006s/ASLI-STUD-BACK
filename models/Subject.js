@@ -6,63 +6,36 @@ const subjectSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  code: {
+    type: String,
+    trim: true
+  },
+  board: {
+    type: String,
+    required: true,
+    enum: ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'],
+    uppercase: true
+  },
   description: {
     type: String,
-    required: true
-  },
-  category: {
-    type: String,
-    required: true,
-    enum: ['JEE', 'NEET', 'UPSC', 'GATE', 'SSC', 'Other']
-  },
-  difficulty: {
-    type: String,
-    required: true,
-    enum: ['Beginner', 'Intermediate', 'Advanced', 'Expert']
-  },
-  duration: {
-    type: String,
-    required: true
-  },
-  subjects: [{
-    type: String,
-    required: true
-  }],
-  color: {
-    type: String,
-    default: 'bg-blue-100 text-blue-600'
-  },
-  icon: {
-    type: String,
-    default: 'BookOpen'
-  },
-  videos: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Video'
-  }],
-  quizzes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Question'
-  }],
-  students: {
-    type: Number,
-    default: 0
-  },
-  rating: {
-    type: Number,
-    default: 0
+    trim: true
   },
   isActive: {
     type: Boolean,
     default: true
   },
   createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: String,
+    enum: ['super-admin'],
+    default: 'super-admin'
   }
 }, {
   timestamps: true
 });
+
+// Compound index to ensure unique subject name per board
+subjectSchema.index({ name: 1, board: 1 }, { unique: true });
+subjectSchema.index({ board: 1 });
+subjectSchema.index({ isActive: 1 });
 
 export default mongoose.model('Subject', subjectSchema);
