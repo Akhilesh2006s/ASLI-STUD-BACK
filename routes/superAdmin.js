@@ -1,4 +1,8 @@
 import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   verifyToken,
   verifySuperAdmin,
@@ -33,7 +37,8 @@ import {
   getContentByBoard,
   deleteContent,
   getBoardAnalytics,
-  initializeBoards
+  initializeBoards,
+  getAllClasses
 } from '../controllers/boardController.js';
 import {
   createExam,
@@ -45,6 +50,122 @@ import {
 } from '../controllers/superAdminExamController.js';
 
 const router = express.Router();
+
+// Get directory name for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Configure multer for content file uploads
+const contentStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, '../uploads/content');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'content-' + uniqueSuffix + ext);
+  }
+});
+
+// File filter based on content type
+const contentFileFilter = (req, file, cb) => {
+  const contentType = req.body.contentType || req.query.contentType;
+  
+  // Document types (TextBook, Workbook, Material)
+  const documentMimes = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.spreadsheet',
+    'application/vnd.oasis.opendocument.presentation'
+  ];
+  
+  // Video types
+  const videoMimes = [
+    'video/mp4',
+    'video/mpeg',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/webm',
+    'video/x-matroska'
+  ];
+  
+  // Audio types
+  const audioMimes = [
+    'audio/mpeg',
+    'audio/mp3',
+    'audio/wav',
+    'audio/ogg',
+    'audio/aac',
+    'audio/webm',
+    'audio/x-m4a'
+  ];
+  
+  if (contentType === 'TextBook' || contentType === 'Workbook' || contentType === 'Material') {
+    if (documentMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only document files (PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX) are allowed for this content type!'), false);
+    }
+  } else if (contentType === 'Video') {
+    if (videoMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files (MP4, MPEG, MOV, AVI, WEBM, MKV) are allowed!'), false);
+    }
+  } else if (contentType === 'Audio') {
+    if (audioMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only audio files (MP3, WAV, OGG, AAC, M4A) are allowed!'), false);
+    }
+  } else {
+    cb(new Error('Invalid content type!'), false);
+  }
+};
+
+const contentUpload = multer({
+  storage: contentStorage,
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB limit
+  fileFilter: contentFileFilter
+});
+
+// Configure multer for thumbnail image uploads
+const thumbnailStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const uploadDir = path.join(__dirname, '../uploads/content/thumbnails');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, 'thumbnail-' + uniqueSuffix + ext);
+  }
+});
+
+const thumbnailUpload = multer({
+  storage: thumbnailStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed!'), false);
+    }
+  }
+});
 
 // Public routes
 router.post('/login', superAdminLogin);
@@ -92,7 +213,142 @@ router.post('/subjects', createSubject);
 router.get('/boards/:board/subjects', getSubjectsByBoard);
 router.delete('/subjects/:subjectId', deleteSubject);
 
-// Content Management (Super Admin only - Asli Prep Exclusive)
+// Class Management (Super Admin only)
+router.get('/classes', getAllClasses);
+
+// ============================================
+// Content Management Routes
+// IMPORTANT: More specific routes MUST come before less specific ones
+// Order: /content/upload-file -> /content/upload-thumbnail -> /content -> /content/:id
+// ============================================
+
+// File upload endpoint for content (MUST be before /content route)
+// Using explicit route definition to ensure it's registered
+router.post('/content/upload-file', (req, res, next) => {
+  console.log('✅✅✅ POST /content/upload-file - Route matched! ✅✅✅');
+  console.log('Full URL:', req.originalUrl);
+  console.log('Request query:', req.query);
+  console.log('Request method:', req.method);
+  console.log('Request path:', req.path);
+  console.log('Request headers:', {
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers['authorization'] ? 'Present' : 'Missing'
+  });
+  next();
+}, (req, res, next) => {
+  // Multer middleware with error handling
+  contentUpload.single('file')(req, res, (err) => {
+    if (err) {
+      console.error('Multer error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          success: false,
+          message: 'File too large. Maximum size is 100MB.' 
+        });
+      }
+      return res.status(400).json({ 
+        success: false,
+        message: err.message || 'File upload error'
+      });
+    }
+    next();
+  });
+}, (req, res) => {
+  try {
+    console.log('File upload handler - req.file:', req.file ? {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    } : 'No file');
+    
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'No file provided' 
+      });
+    }
+
+    const fileUrl = `/uploads/content/${req.file.filename}`;
+    console.log('✅ Content file uploaded successfully:', fileUrl);
+    
+    res.json({ 
+      success: true,
+      fileUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error('Failed to process uploaded file:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to process file',
+      error: error.message 
+    });
+  }
+});
+
+// Thumbnail image upload endpoint for content (MUST be before /content route)
+router.post('/content/upload-thumbnail', (req, res, next) => {
+  console.log('✅✅✅ POST /content/upload-thumbnail - Route matched! ✅✅✅');
+  console.log('Full URL:', req.originalUrl);
+  
+  thumbnailUpload.single('thumbnail')(req, res, (err) => {
+    if (err) {
+      console.error('Multer error:', err);
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ 
+          success: false,
+          message: 'File too large. Maximum size is 5MB.' 
+        });
+      }
+      return res.status(400).json({ 
+        success: false,
+        message: err.message || 'File upload error'
+      });
+    }
+    next();
+  });
+}, (req, res) => {
+  try {
+    console.log('Thumbnail upload handler - req.file:', req.file ? {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    } : 'No file');
+    
+    if (!req.file) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'No file provided' 
+      });
+    }
+
+    const thumbnailUrl = `/uploads/content/thumbnails/${req.file.filename}`;
+    console.log('✅ Thumbnail uploaded successfully:', thumbnailUrl);
+    
+    res.json({ 
+      success: true,
+      thumbnailUrl,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype
+    });
+  } catch (error) {
+    console.error('Failed to upload thumbnail:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Failed to upload thumbnail',
+      error: error.message 
+    });
+  }
+});
+
+// Content CRUD routes (less specific routes come after specific ones)
 router.post('/content', uploadContent);
 router.get('/boards/:board/content', getContentByBoard);
 router.delete('/content/:contentId', deleteContent);
@@ -144,6 +400,15 @@ console.log('✅ Super Admin exam routes registered:', {
   'PUT /exams/:examId': 'updateExam',
   'DELETE /exams/:examId': 'deleteExam',
   'POST /exams/:examId/questions': 'addQuestion'
+});
+
+// Log all registered content routes for debugging
+console.log('✅ Super Admin content routes registered (in order):', {
+  'POST /content/upload-file': 'File upload (MUST be first)',
+  'POST /content/upload-thumbnail': 'Thumbnail upload',
+  'POST /content': 'Create content',
+  'GET /boards/:board/content': 'Get content by board',
+  'DELETE /content/:contentId': 'Delete content'
 });
 
 export default router;
