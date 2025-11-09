@@ -120,6 +120,9 @@ const allowedOrigins = [
   'http://localhost:5175',
   'http://localhost:5176',
   'http://localhost:5177',
+  // New Vercel frontend URL
+  'https://asli-frontend.vercel.app',
+  // Old Vercel URLs (keeping for backward compatibility)
   'https://alsi-stud-frontend-mf3r-ampkob5el-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r-es6c3f5aq-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r-ea1jir1t6-akhilesh2006s-projects.vercel.app',
@@ -131,8 +134,8 @@ const allowedOrigins = [
   'https://alsi-stud-frontend-mf3r-6p7vghuuv-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r-9pn4j5v4f-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r-18qclrtbv-akhilesh2006s-projects.vercel.app',
-  'https://alsi-stud-frontend-mf3r-mlmb076jn-akhilesh2006s-projects.vercel.app', // Previous Vercel URL
-  'https://alsi-stud-frontend-mf3r-m8dmkdu86-akhilesh2006s-projects.vercel.app', // Latest Vercel URL
+  'https://alsi-stud-frontend-mf3r-mlmb076jn-akhilesh2006s-projects.vercel.app',
+  'https://alsi-stud-frontend-mf3r-m8dmkdu86-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r.vercel.app',
   process.env.CLIENT_URL
 ].filter(Boolean);
@@ -147,12 +150,17 @@ app.use(cors({
       return callback(null, true);
     }
     
-    // Allow any Vercel subdomain pattern for your project
+    // Allow new Vercel frontend domain and its preview deployments
+    if (origin && origin.match(/^https:\/\/asli-frontend(-[a-z0-9]+)?\.vercel\.app$/)) {
+      return callback(null, true);
+    }
+    
+    // Allow any Vercel subdomain pattern for old project (backward compatibility)
     if (origin && origin.match(/^https:\/\/alsi-stud-frontend-mf3r-[a-z0-9]+-akhilesh2006s-projects\.vercel\.app$/)) {
       return callback(null, true);
     }
     
-    // Allow the main Vercel domain
+    // Allow the main old Vercel domain
     if (origin && origin.match(/^https:\/\/alsi-stud-frontend-mf3r\.vercel\.app$/)) {
       return callback(null, true);
     }
