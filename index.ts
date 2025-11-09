@@ -146,10 +146,27 @@ app.post('/api/auth/login', (req, res, next) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  req.logout((err) => {
-    if (err) return res.status(500).json({ message: 'Logout failed' });
-    res.json({ message: 'Logout successful' });
-  });
+  // For JWT-based auth, logout is handled client-side by removing the token
+  // This endpoint just confirms the logout request
+  try {
+    if (req.logout && typeof req.logout === 'function') {
+      // Session-based logout (if using sessions)
+      req.logout((err) => {
+        if (err) {
+          console.error('Logout error:', err);
+          return res.status(500).json({ success: false, message: 'Logout failed' });
+        }
+        res.json({ success: true, message: 'Logout successful' });
+      });
+    } else {
+      // JWT-based logout (token removed client-side)
+      res.json({ success: true, message: 'Logout successful' });
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still return success for JWT-based auth since token is removed client-side
+    res.json({ success: true, message: 'Logout successful' });
+  }
 });
 
 app.get('/api/auth/me', (req, res) => {
