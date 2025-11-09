@@ -30,6 +30,118 @@ export const initializeBoards = async () => {
   }
 };
 
+// Seed Class 10 subjects for all boards
+export const seedClass10Subjects = async () => {
+  try {
+    const boards = ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'];
+    const class10Subjects = [
+      {
+        name: 'Mathematics',
+        code: 'MATH10',
+        description: 'Mathematics for Class 10 - Algebra, Geometry, Trigonometry, and Statistics',
+        classNumber: '10'
+      },
+      {
+        name: 'Science',
+        code: 'SCI10',
+        description: 'Science for Class 10 - Physics, Chemistry, and Biology',
+        classNumber: '10'
+      },
+      {
+        name: 'Physics',
+        code: 'PHY10',
+        description: 'Physics for Class 10 - Mechanics, Electricity, Magnetism, and Optics',
+        classNumber: '10'
+      },
+      {
+        name: 'Chemistry',
+        code: 'CHEM10',
+        description: 'Chemistry for Class 10 - Chemical Reactions, Acids, Bases, and Organic Chemistry',
+        classNumber: '10'
+      },
+      {
+        name: 'Biology',
+        code: 'BIO10',
+        description: 'Biology for Class 10 - Life Processes, Genetics, and Ecology',
+        classNumber: '10'
+      },
+      {
+        name: 'English',
+        code: 'ENG10',
+        description: 'English Language and Literature for Class 10',
+        classNumber: '10'
+      },
+      {
+        name: 'Social Studies',
+        code: 'SOC10',
+        description: 'Social Studies for Class 10 - History, Geography, Civics, and Economics',
+        classNumber: '10'
+      },
+      {
+        name: 'Hindi',
+        code: 'HIN10',
+        description: 'Hindi Language and Literature for Class 10',
+        classNumber: '10'
+      },
+      {
+        name: 'Telugu',
+        code: 'TEL10',
+        description: 'Telugu Language and Literature for Class 10',
+        classNumber: '10'
+      }
+    ];
+
+    let createdCount = 0;
+    let skippedCount = 0;
+
+    for (const board of boards) {
+      for (const subjectData of class10Subjects) {
+        try {
+          // Check if subject already exists for this board
+          const existingSubject = await Subject.findOne({
+            name: subjectData.name,
+            board: board
+          });
+
+          if (!existingSubject) {
+            await Subject.create({
+              ...subjectData,
+              board: board,
+              isActive: true,
+              createdBy: 'super-admin'
+            });
+            createdCount++;
+            console.log(`✅ Created ${subjectData.name} for ${board}`);
+          } else {
+            // Update existing subject to include classNumber if not set
+            if (!existingSubject.classNumber && subjectData.classNumber) {
+              existingSubject.classNumber = subjectData.classNumber;
+              await existingSubject.save();
+              console.log(`🔄 Updated ${subjectData.name} for ${board} with classNumber`);
+            } else {
+              skippedCount++;
+            }
+          }
+        } catch (error) {
+          // Handle unique constraint errors gracefully
+          if (error.code === 11000) {
+            skippedCount++;
+            console.log(`⏭️  Skipped ${subjectData.name} for ${board} (already exists)`);
+          } else {
+            console.error(`❌ Error creating ${subjectData.name} for ${board}:`, error.message);
+          }
+        }
+      }
+    }
+
+    console.log(`📚 Class 10 subjects seeding completed: ${createdCount} created, ${skippedCount} skipped`);
+    return { created: createdCount, skipped: skippedCount };
+  } catch (error) {
+    console.error('Error seeding class 10 subjects:', error);
+    throw error;
+  }
+};
+
 // Get all boards
 export const getAllBoards = async (req, res) => {
   try {
@@ -190,9 +302,9 @@ export const createSubject = async (req, res) => {
     console.log('Request body:', req.body);
     console.log('User:', req.user);
     
-    const { name, board, description, code } = req.body;
+    const { name, board, description, code, classNumber } = req.body;
 
-    console.log('📚 Creating subject:', { name, board, description, code });
+    console.log('📚 Creating subject:', { name, board, description, code, classNumber });
 
     if (!name || !board) {
       return res.status(400).json({ success: false, message: 'Name and board are required' });
@@ -204,7 +316,10 @@ export const createSubject = async (req, res) => {
     }
 
     // Check if subject already exists for this board
-    const existingSubject = await Subject.findOne({ name: name.trim(), board: boardUpper });
+    const existingSubject = await Subject.findOne({ 
+      name: name.trim(), 
+      board: boardUpper
+    });
     if (existingSubject) {
       return res.status(400).json({ success: false, message: 'Subject already exists for this board' });
     }
@@ -219,16 +334,50 @@ export const createSubject = async (req, res) => {
     };
 
     // Only add optional fields if they have values
+    // IMPORTANT: Don't set code if it's empty to avoid unique index conflicts with null values
+    // The code field should be completely omitted from the document if not provided
     if (code && code.trim()) {
       subjectData.code = code.trim();
     }
+    // Don't include code at all if it's empty - this prevents MongoDB from setting it to null
+    
     if (description && description.trim()) {
       subjectData.description = description.trim();
+    }
+    if (classNumber && classNumber.trim()) {
+      subjectData.classNumber = classNumber.trim();
     }
 
     const subject = new Subject(subjectData);
 
-    await subject.save();
+    try {
+      await subject.save();
+    } catch (saveError) {
+      // Handle duplicate key error (unique constraint violation)
+      if (saveError.code === 11000 || saveError.name === 'MongoServerError') {
+        // Check if it's a duplicate code (including null values)
+        if (saveError.keyPattern && (saveError.keyPattern.code || saveError.keyValue && saveError.keyValue.code === null)) {
+          // This happens when there's a non-sparse unique index on code and multiple subjects have null code
+          // The database needs the old index dropped - for now, provide a helpful error
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Database index conflict. Please provide a unique subject code or contact administrator to fix the database index.' 
+          });
+        }
+        // Check if it's a duplicate name/board
+        if (saveError.keyPattern && saveError.keyPattern.name) {
+          return res.status(400).json({ 
+            success: false, 
+            message: 'Subject already exists for this board' 
+          });
+        }
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Subject already exists. Please check the subject name and board.' 
+        });
+      }
+      throw saveError; // Re-throw if it's a different error
+    }
 
     console.log('✅ Subject created successfully:', subject.name, 'for board', boardUpper);
 
@@ -236,7 +385,11 @@ export const createSubject = async (req, res) => {
   } catch (error) {
     console.error('❌ Create subject error:', error);
     console.error('Error stack:', error.stack);
-    res.status(500).json({ success: false, message: 'Failed to create subject', error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create subject', 
+      error: error.message 
+    });
   }
 };
 
@@ -289,23 +442,56 @@ export const deleteSubject = async (req, res) => {
   }
 };
 
+// Get All Classes (Super Admin only)
+export const getAllClasses = async (req, res) => {
+  try {
+    // Get all unique class numbers from students
+    const classNumbers = await User.distinct('classNumber', {
+      role: 'student',
+      classNumber: { $exists: true, $ne: null, $ne: '', $ne: 'Unassigned' }
+    });
+
+    // Sort classes numerically if possible, otherwise alphabetically
+    const sortedClasses = classNumbers
+      .filter(c => c && c !== 'Unassigned')
+      .sort((a, b) => {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (!isNaN(numA) && !isNaN(numB)) {
+          return numA - numB;
+        }
+        return a.localeCompare(b);
+      });
+
+    res.json({ success: true, data: sortedClasses });
+  } catch (error) {
+    console.error('Get all classes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch classes' });
+  }
+};
+
 // Upload Content (Super Admin only - Asli Prep Exclusive)
 export const uploadContent = async (req, res) => {
   try {
-    const { title, description, type, board, subject, topic, fileUrl, thumbnailUrl, duration, size } = req.body;
+    const { title, description, type, board, subject, classNumber, topic, date, fileUrl, thumbnailUrl, duration, size, deadline } = req.body;
 
-    console.log('📦 Uploading content:', { title, type, board, subject });
+    console.log('📦 Uploading content:', { title, type, board, subject, classNumber, date, deadline });
 
-    if (!title || !type || !board || !subject || !fileUrl) {
-      return res.status(400).json({ success: false, message: 'Missing required fields: title, type, board, subject, and fileUrl are required' });
+    if (!title || !type || !board || !subject || !fileUrl || !date) {
+      return res.status(400).json({ success: false, message: 'Missing required fields: title, type, board, subject, date, and fileUrl are required' });
     }
 
     if (!['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(board)) {
       return res.status(400).json({ success: false, message: 'Invalid board code' });
     }
 
-    if (!['video', 'pdf', 'ppt', 'note', 'other'].includes(type)) {
+    if (!['TextBook', 'Workbook', 'Material', 'Video', 'Audio', 'Homework'].includes(type)) {
       return res.status(400).json({ success: false, message: 'Invalid content type' });
+    }
+
+    // Validate deadline for homework
+    if (type === 'Homework' && !deadline) {
+      return res.status(400).json({ success: false, message: 'Deadline is required for Homework content' });
     }
 
     // Verify subject exists and belongs to the board
@@ -317,20 +503,33 @@ export const uploadContent = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Subject does not belong to the selected board' });
     }
 
-    const content = new Content({
+    const contentData = {
       title: title.trim(),
       description: description?.trim() || undefined,
       type,
       board: board.toUpperCase(),
       subject,
       topic: topic?.trim() || undefined,
+      date: new Date(date),
       fileUrl,
       thumbnailUrl: thumbnailUrl?.trim() || undefined,
       duration: duration || 0,
       size: size || 0,
       isExclusive: true,
       createdBy: 'super-admin'
-    });
+    };
+
+    // Only add classNumber if provided
+    if (classNumber && classNumber.trim()) {
+      contentData.classNumber = classNumber.trim();
+    }
+
+    // Add deadline for homework
+    if (type === 'Homework' && deadline) {
+      contentData.deadline = new Date(deadline);
+    }
+
+    const content = new Content(contentData);
 
     await content.save();
 
@@ -345,7 +544,25 @@ export const uploadContent = async (req, res) => {
     res.json({ success: true, data: content, message: 'Content uploaded successfully' });
   } catch (error) {
     console.error('Upload content error:', error);
-    res.status(500).json({ success: false, message: 'Failed to upload content' });
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    
+    // Provide more specific error messages
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation error: ' + Object.values(error.errors).map((e) => e.message).join(', ')
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to upload content',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 

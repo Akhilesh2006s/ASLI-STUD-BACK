@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Teacher from '../models/Teacher.js';
 import Video from '../models/Video.js';
@@ -7,15 +8,26 @@ import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
 import Question from '../models/Question.js';
 import ExamResult from '../models/ExamResult.js';
+import Class from '../models/Class.js';
+import Subject from '../models/Subject.js';
+import Content from '../models/Content.js';
 
 // Admin Dashboard Stats
 export const getAdminDashboardStats = async (req, res) => {
   try {
     const adminId = req.adminId;
     
+    // Get admin to find their board
+    const admin = await User.findById(adminId).select('board');
+    const adminBoard = admin?.board;
+    
     // Build filter based on user role
     const filter = adminId ? { adminId } : {};
     const userFilter = adminId ? { assignedAdmin: adminId } : {};
+    const classFilter = adminId ? { assignedAdmin: adminId, isActive: true } : { isActive: true };
+    
+    // Build content filter based on admin's board
+    const contentFilter = adminBoard ? { board: adminBoard, isActive: true } : { isActive: true };
     
     const [
       totalStudents,
@@ -23,7 +35,10 @@ export const getAdminDashboardStats = async (req, res) => {
       totalVideos,
       totalAssessments,
       totalExams,
-      activeUsers
+      activeUsers,
+      totalClasses,
+      totalQuizzes,
+      totalContent
     ] = await Promise.all([
       User.countDocuments({ role: 'student', ...userFilter }),
       Teacher.countDocuments(filter),
@@ -34,7 +49,10 @@ export const getAdminDashboardStats = async (req, res) => {
         role: 'student', 
         isActive: true, 
         ...userFilter 
-      })
+      }),
+      Class.countDocuments(classFilter),
+      Assessment.countDocuments({ ...filter, isPublished: true }),
+      adminBoard ? Content.countDocuments(contentFilter) : Promise.resolve(0)
     ]);
     
     res.json({
@@ -46,7 +64,9 @@ export const getAdminDashboardStats = async (req, res) => {
         totalAssessments,
         totalExams,
         activeUsers,
-        totalClasses: Math.ceil(totalStudents / 30) // Assuming 30 students per class
+        totalClasses,
+        totalQuizzes,
+        totalContent
       }
     });
   } catch (error) {
@@ -64,7 +84,10 @@ export const getStudents = async (req, res) => {
     const students = await User.find({ 
       role: 'student', 
       ...filter 
-    }).select('-password').sort({ createdAt: -1 });
+    })
+    .select('-password')
+    .populate('assignedClass', 'name classNumber section description')
+    .sort({ createdAt: -1 });
     
     res.json({
       success: true,
@@ -79,12 +102,79 @@ export const getStudents = async (req, res) => {
 export const createStudent = async (req, res) => {
   try {
     const { email, password, fullName, classNumber, phone } = req.body;
-    const adminId = req.adminId;
     
-    // Get admin to inherit board assignment
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
-      return res.status(404).json({ success: false, message: 'Admin not found' });
+    // Get admin ID from request (set by extractAdminId middleware)
+    // Try multiple sources: req.adminId, req.userId, req.user.id, req.user._id
+    const adminId = req.adminId || req.userId || req.user?.id || req.user?._id || req.user?.userId;
+    
+    // Debug logging
+    console.log('createStudent - req.adminId:', req.adminId);
+    console.log('createStudent - req.userId:', req.userId);
+    console.log('createStudent - req.user:', req.user);
+    console.log('createStudent - adminId to use:', adminId);
+    console.log('createStudent - adminId type:', typeof adminId);
+    
+    if (!adminId) {
+      console.error('createStudent - No admin ID found in request');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Admin ID not found. Please ensure you are authenticated as an admin. Try logging out and logging back in.' 
+      });
+    }
+    
+    // Validate required fields
+    if (!fullName || !email || !classNumber) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Full name, email, and class number are required' 
+      });
+    }
+    
+    // Get admin to inherit board and school
+    // Try to find admin by ID (MongoDB ObjectId or string)
+    let admin = null;
+    try {
+      // Try as ObjectId first
+      if (mongoose.Types.ObjectId.isValid(adminId)) {
+        admin = await User.findById(adminId).select('board schoolName role fullName email');
+      } else {
+        // If not valid ObjectId, try finding by email or other field
+        console.log('adminId is not a valid ObjectId, trying alternative lookup');
+        admin = await User.findOne({ 
+          $or: [
+            { _id: adminId },
+            { email: req.user?.email }
+          ]
+        }).select('board schoolName role fullName email');
+      }
+    } catch (dbError) {
+      console.error('Database error finding admin:', dbError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error while finding admin' 
+      });
+    }
+    
+    console.log('createStudent - Found admin:', admin ? { 
+      id: admin._id, 
+      role: admin.role, 
+      board: admin.board,
+      email: admin.email,
+      fullName: admin.fullName
+    } : 'null');
+    
+    if (!admin) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `Admin not found with ID: ${adminId}. Please ensure you are logged in as an admin.` 
+      });
+    }
+    
+    if (admin.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: `User with ID ${adminId} is not an admin. Role: ${admin.role}. Please log in as an admin.` 
+      });
     }
 
     if (!admin.board) {
@@ -103,15 +193,16 @@ export const createStudent = async (req, res) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
     
-    // Create new student with admin's board
+    // Create new student with admin's board and school
     const newStudent = new User({
       email,
       password: hashedPassword,
       fullName,
-      classNumber: classNumber || 'Unassigned',
+      classNumber: classNumber.trim(), // Required, no default
       phone: phone || '',
       role: 'student',
       board: admin.board, // Inherit board from admin
+      schoolName: admin.schoolName || '', // Inherit school from admin
       isActive: true,
       assignedAdmin: adminId
     });
@@ -127,6 +218,8 @@ export const createStudent = async (req, res) => {
         fullName: newStudent.fullName,
         classNumber: newStudent.classNumber,
         phone: newStudent.phone,
+        board: newStudent.board,
+        schoolName: newStudent.schoolName,
         isActive: newStudent.isActive
       }
     });
@@ -239,7 +332,33 @@ export const getTeachers = async (req, res) => {
 export const createTeacher = async (req, res) => {
   try {
     const { email, password, fullName, phone, department, qualifications, subjects } = req.body;
-    const adminId = req.adminId;
+    
+    // Get admin ID from request (set by extractAdminId middleware)
+    // Try multiple sources: req.adminId, req.userId, req.user.id, req.user._id
+    const adminId = req.adminId || req.userId || req.user?.id || req.user?._id || req.user?.userId;
+    
+    // Debug logging
+    console.log('createTeacher - req.adminId:', req.adminId);
+    console.log('createTeacher - req.userId:', req.userId);
+    console.log('createTeacher - req.user:', req.user);
+    console.log('createTeacher - adminId to use:', adminId);
+    console.log('createTeacher - Request body:', { email, fullName, department, subjectsCount: subjects?.length });
+    
+    if (!adminId) {
+      console.error('createTeacher - No admin ID found in request');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Admin ID not found. Please ensure you are authenticated as an admin. Try logging out and logging back in.' 
+      });
+    }
+    
+    // Validate required fields
+    if (!fullName || !email || !department || !subjects || subjects.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Name, email, department, and at least one subject are required' 
+      });
+    }
     
     // Check if teacher already exists
     const existingTeacher = await Teacher.findOne({ email });
@@ -250,8 +369,81 @@ export const createTeacher = async (req, res) => {
       });
     }
     
+    // Get admin details to get school and board
+    // Try to find admin by ID (MongoDB ObjectId or string)
+    let admin = null;
+    try {
+      // Try as ObjectId first
+      if (mongoose.Types.ObjectId.isValid(adminId)) {
+        admin = await User.findById(adminId).select('schoolName board role fullName email');
+      } else {
+        // If not valid ObjectId, try finding by email or other field
+        console.log('adminId is not a valid ObjectId, trying alternative lookup');
+        admin = await User.findOne({ 
+          $or: [
+            { _id: adminId },
+            { email: req.user?.email }
+          ]
+        }).select('schoolName board role fullName email');
+      }
+    } catch (dbError) {
+      console.error('Database error finding admin:', dbError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error while finding admin' 
+      });
+    }
+    
+    console.log('createTeacher - Found admin:', admin ? { 
+      id: admin._id, 
+      role: admin.role, 
+      board: admin.board,
+      schoolName: admin.schoolName,
+      email: admin.email
+    } : 'null');
+    
+    if (!admin) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `Admin not found with ID: ${adminId}. Please ensure you are logged in as an admin.` 
+      });
+    }
+    
+    if (admin.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: `User with ID ${adminId} is not an admin. Role: ${admin.role}. Please log in as an admin.` 
+      });
+    }
+    
     // Hash password
     const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
+    
+    // Ensure adminId is a valid ObjectId
+    let validAdminId = adminId;
+    if (!mongoose.Types.ObjectId.isValid(adminId)) {
+      // If adminId is not valid, use the admin's _id from database
+      validAdminId = admin._id;
+    } else {
+      // Convert string to ObjectId if needed
+      validAdminId = new mongoose.Types.ObjectId(adminId);
+    }
+    
+    // Handle board enum validation
+    let teacherBoard = null;
+    if (admin.board && ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(admin.board)) {
+      teacherBoard = admin.board.toUpperCase();
+    }
+    
+    console.log('createTeacher - Creating teacher with:', {
+      email,
+      fullName,
+      department,
+      school: admin.schoolName || '',
+      board: teacherBoard,
+      adminId: validAdminId,
+      subjectsCount: subjects?.length
+    });
     
     // Create new teacher
     const newTeacher = new Teacher({
@@ -260,14 +452,17 @@ export const createTeacher = async (req, res) => {
       fullName,
       phone: phone || '',
       department: department || '',
+      school: admin.schoolName || '',
+      board: teacherBoard,
       qualifications: qualifications || '',
       subjects: subjects || [],
       role: 'teacher',
       isActive: true,
-      adminId
+      adminId: validAdminId
     });
     
     await newTeacher.save();
+    console.log('createTeacher - Teacher saved successfully:', newTeacher._id);
     
     res.status(201).json({
       success: true,
@@ -278,6 +473,8 @@ export const createTeacher = async (req, res) => {
         fullName: newTeacher.fullName,
         phone: newTeacher.phone,
         department: newTeacher.department,
+        school: newTeacher.school,
+        board: newTeacher.board,
         qualifications: newTeacher.qualifications,
         subjects: newTeacher.subjects,
         isActive: newTeacher.isActive
@@ -285,7 +482,25 @@ export const createTeacher = async (req, res) => {
     });
   } catch (error) {
     console.error('Create teacher error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create teacher' });
+    console.error('Create teacher error stack:', error.stack);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create teacher';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = `Validation error: ${Object.values(error.errors).map((e) => e.message).join(', ')}`;
+    } else if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      errorMessage = 'A teacher with this email already exists';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -1004,61 +1219,123 @@ export const getTeacherDashboardStats = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Teacher not found' });
     }
 
-    // Get students from teacher's assigned classes AND assigned to the same admin as the teacher
+    // Get class details for assigned classes
+    let assignedClassesDetails = [];
     let students = [];
+    
     if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
+      // Fetch actual Class documents from database (once)
+      const classDocuments = await Class.find({
+        $or: [
+          { _id: { $in: teacher.assignedClassIds } },
+          { classNumber: { $in: teacher.assignedClassIds } }
+        ],
+        isActive: true
+      })
+      .populate('assignedSubjects', '_id name')
+      .select('_id classNumber section description assignedSubjects');
+
+      const classObjectIds = classDocuments.map(c => c._id);
+      
+      // Get students assigned to these classes by assignedClass ObjectId
       students = await User.find({ 
         role: 'student',
-        classNumber: { $in: teacher.assignedClassIds },
+        assignedClass: { $in: classObjectIds },
         assignedAdmin: teacher.adminId  // Filter by teacher's admin
-      });
+      })
+      .populate('assignedClass', '_id classNumber section')
+      .select('fullName email classNumber phone isActive createdAt lastLogin assignedClass');
       
       console.log('Teacher dashboard - Found students:', students.length);
       console.log('Teacher adminId:', teacher.adminId);
       console.log('Teacher assignedClassIds:', teacher.assignedClassIds);
-      console.log('Students data:', students.map(s => ({ name: s.fullName, class: s.classNumber, admin: s.assignedAdmin })));
-    }
+      console.log('Class ObjectIds:', classObjectIds);
+      console.log('Students data:', students.map(s => ({ 
+        name: s.fullName, 
+        class: s.classNumber, 
+        assignedClass: s.assignedClass?._id,
+        admin: s.assignedAdmin 
+      })));
 
-    // Get class details for assigned classes
-    let assignedClassesDetails = [];
-    if (teacher.assignedClassIds && teacher.assignedClassIds.length > 0) {
-      // Build a map of classId -> studentCount (only for assigned students)
-      const classIdToCount = teacher.assignedClassIds.reduce((acc, id) => {
-        acc[id] = 0;
-        return acc;
-      }, {});
-      
-      // Count only assigned students in each class
-      for (const s of students) {
-        if (classIdToCount[s.classNumber] !== undefined) {
-          classIdToCount[s.classNumber] += 1;
+      // Build a map of classId (ObjectId or classNumber) -> Class document
+      const classMap = new Map();
+      classDocuments.forEach(classDoc => {
+        // Map by ObjectId
+        classMap.set(classDoc._id.toString(), classDoc);
+        // Map by classNumber for backward compatibility
+        classMap.set(classDoc.classNumber, classDoc);
+      });
+
+      // Build a map of classId -> studentCount
+      const classIdToCount = new Map();
+      teacher.assignedClassIds.forEach(classId => {
+        const classDoc = classMap.get(String(classId));
+        if (classDoc) {
+          classIdToCount.set(String(classId), 0);
+        }
+      });
+
+      // Count students assigned to each class
+      // Students are matched by assignedClass ObjectId
+      for (const student of students) {
+        if (student.assignedClass && student.assignedClass._id) {
+          const studentClassId = student.assignedClass._id.toString();
+          // Check if this student's class is in the teacher's assigned classes
+          for (const [classId, count] of classIdToCount.entries()) {
+            const classDoc = classMap.get(classId);
+            if (classDoc && (classDoc._id.toString() === studentClassId || 
+                classDoc.classNumber === String(classId))) {
+              classIdToCount.set(classId, count + 1);
+              break;
+            }
+          }
         }
       }
 
-      // Create class cards with real student counts and student details
-      assignedClassesDetails = teacher.assignedClassIds.map((classId) => {
-        // Get students for this specific class
-        const classStudents = students.filter(s => s.classNumber === classId);
-        
-        return {
-          id: classId,
-          name: `Class Class-${classId}`,
-          subject: teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General',
-          schedule: 'Mon, Wed, Fri',
-          room: `Room Class-${classId}`,
-          studentCount: classIdToCount[classId] || 0,
-          students: classStudents.map(student => ({
-            id: student._id,
-            name: student.fullName,
-            email: student.email,
-            classNumber: student.classNumber,
-            phone: student.phone,
-            status: student.isActive ? 'active' : 'inactive',
-            createdAt: student.createdAt,
-            lastLogin: student.lastLogin
-          }))
-        };
-      });
+      // Create class cards with real class names and student details
+      assignedClassesDetails = teacher.assignedClassIds
+        .map((classId) => {
+          const classDoc = classMap.get(String(classId));
+          if (!classDoc) {
+            // If class not found, skip it
+            return null;
+          }
+
+          // Get students for this specific class by assignedClass ObjectId
+          const classStudents = students.filter(s => 
+            s.assignedClass && 
+            s.assignedClass._id && 
+            s.assignedClass._id.toString() === classDoc._id.toString()
+          );
+
+          // Build class name from classNumber and section (e.g., "10C")
+          const className = `${classDoc.classNumber}${classDoc.section || ''}`;
+          
+          return {
+            id: classDoc._id.toString(),
+            name: className,
+            classNumber: classDoc.classNumber,
+            section: classDoc.section,
+            description: classDoc.description || '',
+            subject: classDoc.assignedSubjects && classDoc.assignedSubjects.length > 0 
+              ? classDoc.assignedSubjects[0].name 
+              : (teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General'),
+            schedule: 'Mon, Wed, Fri',
+            room: `Room ${className}`,
+            studentCount: classIdToCount.get(String(classId)) || 0,
+            students: classStudents.map(student => ({
+              id: student._id,
+              name: student.fullName,
+              email: student.email,
+              classNumber: student.classNumber,
+              phone: student.phone,
+              status: student.isActive ? 'active' : 'inactive',
+              createdAt: student.createdAt,
+              lastLogin: student.lastLogin
+            }))
+          };
+        })
+        .filter(classItem => classItem !== null); // Remove null entries
     }
 
     // Get teacher's videos and assessments
@@ -1123,6 +1400,7 @@ export const getTeacherDashboardStats = async (req, res) => {
           totalExams: exams.length,
           averagePerformance: Math.round(averagePerformance)
         },
+        teacherId: teacher._id.toString(),
         teacherEmail: teacher.email,
         teacherSubjects: teacher.subjects || [],
         assignedClasses: assignedClassesDetails,
@@ -1359,6 +1637,602 @@ export const assignSubjectsToStudent = async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to assign subjects to student' 
+    });
+  }
+};
+
+// Get Classes
+export const getClasses = async (req, res) => {
+  try {
+    const adminId = req.adminId;
+
+    // Get classes from Class model with assignedSubjects populated
+    const classDocuments = await Class.find({
+      assignedAdmin: adminId,
+      isActive: true
+    })
+    .populate('assignedSubjects', '_id name description code board')
+    .sort({ classNumber: 1, section: 1 });
+
+    // Get students assigned to this admin with their assignedClass populated
+    const students = await User.find({ 
+      role: 'student',
+      assignedAdmin: adminId 
+    })
+    .select('fullName email classNumber phone isActive createdAt lastLogin assignedClass')
+    .populate('assignedClass', '_id name classNumber section');
+
+    // Get all teachers assigned to this admin
+    const teachers = await Teacher.find({
+      adminId: adminId,
+      isActive: true
+    }).select('fullName email assignedClassIds');
+    
+    console.log(`Found ${teachers.length} teachers for admin ${adminId}`);
+    teachers.forEach(teacher => {
+      console.log(`  Teacher: ${teacher.fullName}, assignedClassIds:`, teacher.assignedClassIds);
+    });
+
+    // Format classes with students and teachers
+    // Only show students who are explicitly assigned to this class via assignedClass field
+    const classes = classDocuments.map(classDoc => {
+      // Get students who have this specific class assigned (by assignedClass ObjectId)
+      const classStudents = students
+        .filter(student => {
+          // Check if student has assignedClass that matches this class
+          const studentAssignedClass = student.assignedClass;
+          if (!studentAssignedClass) return false;
+          
+          // Handle both populated and non-populated cases
+          const assignedClassId = studentAssignedClass._id 
+            ? studentAssignedClass._id.toString() 
+            : studentAssignedClass.toString();
+          
+          return assignedClassId === classDoc._id.toString();
+        })
+        .map(student => ({
+          id: student._id,
+          name: student.fullName,
+          email: student.email,
+          classNumber: student.classNumber,
+          phone: student.phone,
+          status: student.isActive ? 'active' : 'inactive',
+          createdAt: student.createdAt,
+          lastLogin: student.lastLogin
+        }));
+
+      // Get teachers assigned to this class
+      // Teachers have assignedClassIds which can contain class ObjectId (from frontend)
+      const classIdStr = classDoc._id.toString();
+      const classNumberStr = classDoc.classNumber;
+      
+      console.log(`Checking class ${classDoc.name} (ID: ${classIdStr}, Number: ${classNumberStr})`);
+      
+      const classTeachers = teachers
+        .filter(teacher => {
+          if (!teacher.assignedClassIds || teacher.assignedClassIds.length === 0) {
+            return false;
+          }
+          
+          // Check if teacher's assignedClassIds contains this class's _id
+          // assignedClassIds stores ObjectIds from the frontend (classItem.id)
+          const matches = teacher.assignedClassIds.some(assignedId => {
+            // Normalize both IDs to strings for comparison
+            const assignedIdStr = String(assignedId);
+            const classIdStrNormalized = String(classIdStr);
+            
+            // Match by ObjectId (primary method - what frontend sends)
+            if (assignedIdStr === classIdStrNormalized) {
+              console.log(`  ✓ Teacher ${teacher.fullName} matched by ObjectId: ${assignedIdStr}`);
+              return true;
+            }
+            
+            // Fallback: Match by classNumber (for backward compatibility)
+            if (assignedIdStr === classNumberStr) {
+              console.log(`  ✓ Teacher ${teacher.fullName} matched by classNumber: ${assignedIdStr}`);
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (!matches) {
+            console.log(`  ✗ Teacher ${teacher.fullName} not matched. Their assignedClassIds:`, teacher.assignedClassIds);
+          }
+          
+          return matches;
+        })
+        .map(teacher => ({
+          id: teacher._id.toString(),
+          name: teacher.fullName,
+          email: teacher.email
+        }));
+      
+      console.log(`  Found ${classTeachers.length} teachers for class ${classDoc.name}`);
+      
+      // Format assignedSubjects for frontend
+      const assignedSubjects = classDoc.assignedSubjects 
+        ? classDoc.assignedSubjects.map(subj => ({
+            _id: subj._id ? subj._id.toString() : subj.toString(),
+            id: subj._id ? subj._id.toString() : subj.toString(),
+            name: subj.name || 'Unknown Subject',
+            description: subj.description || '',
+            code: subj.code || '',
+            board: subj.board || ''
+          }))
+        : [];
+
+      return {
+        id: classDoc._id.toString(),
+        name: classDoc.name || `Class ${classDoc.classNumber}${classDoc.section}`,
+        description: classDoc.description || '',
+        classNumber: classDoc.classNumber,
+        section: classDoc.section,
+        assignedSubjects: assignedSubjects,
+        subject: 'General',
+        grade: classDoc.classNumber,
+        teacher: classTeachers.length > 0 ? classTeachers.map(t => t.name).join(', ') : 'TBD',
+        teachers: classTeachers,
+        schedule: 'Mon-Fri 9:00 AM',
+        room: `Room ${classDoc.classNumber}${classDoc.section}`,
+        studentCount: classStudents.length,
+        students: classStudents,
+        createdAt: classDoc.createdAt
+      };
+    });
+
+    // Only return classes that were explicitly created through the Add Class form
+    // No automatic class creation from student data
+    
+    console.log('Classes being returned:', classes.map(c => ({ 
+      name: c.name, 
+      classNumber: c.classNumber,
+      section: c.section,
+      studentCount: c.studentCount
+    })));
+    res.json(classes);
+  } catch (error) {
+    console.error('Failed to fetch classes:', error);
+    res.status(500).json({ message: 'Failed to fetch classes' });
+  }
+};
+
+// Assign class to student
+export const assignClassToStudent = async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { classId } = req.body;
+    const adminId = req.adminId || req.userId || req.user?.id || req.user?._id || req.user?.userId;
+
+    console.log('Assign class to student request:', { studentId, classId, adminId });
+
+    if (!studentId || !classId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID and Class ID are required'
+      });
+    }
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin ID not found. Please ensure you are authenticated as an admin.'
+      });
+    }
+
+    // Find the student
+    const student = await User.findOne({ 
+      _id: studentId,
+      role: 'student',
+      assignedAdmin: adminId
+    });
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found or access denied'
+      });
+    }
+
+    // Find the class and verify it belongs to the admin
+    const classDoc = await Class.findOne({
+      _id: classId,
+      assignedAdmin: adminId,
+      isActive: true
+    });
+
+    if (!classDoc) {
+      return res.status(404).json({
+        success: false,
+        message: 'Class not found or access denied'
+      });
+    }
+
+    // Update student with assigned class
+    const updatedStudent = await User.findByIdAndUpdate(
+      studentId,
+      { 
+        assignedClass: classId,
+        classNumber: classDoc.classNumber, // Also update classNumber for backward compatibility
+        updatedAt: new Date()
+      },
+      { new: true }
+    )
+    .populate('assignedClass', 'name classNumber section description')
+    .select('-password');
+
+    console.log('Updated student with class:', updatedStudent);
+
+    res.json({
+      success: true,
+      message: 'Class assigned to student successfully',
+      data: updatedStudent
+    });
+  } catch (error) {
+    console.error('Assign class to student error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to assign class to student',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Delete Class
+export const deleteClass = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminId = req.adminId;
+    
+    if (!id) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Class ID is required' 
+      });
+    }
+    
+    // Find the class and verify it belongs to this admin
+    const classToDelete = await Class.findOne({
+      _id: id,
+      assignedAdmin: adminId
+    });
+    
+    if (!classToDelete) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Class not found or access denied' 
+      });
+    }
+    
+    // Delete the class from database
+    await Class.findByIdAndDelete(id);
+    
+    console.log('Class deleted successfully:', {
+      id: id,
+      classNumber: classToDelete.classNumber,
+      section: classToDelete.section,
+      adminId: adminId
+    });
+    
+    res.json({
+      success: true,
+      message: 'Class deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete class error:', error);
+    console.error('Delete class error stack:', error.stack);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to delete class';
+    
+    if (error.name === 'CastError') {
+      errorMessage = 'Invalid class ID format';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Create Class
+export const createClass = async (req, res) => {
+  try {
+    const { classNumber, section, description } = req.body;
+    
+    // Get admin ID from request (set by extractAdminId middleware)
+    // Try multiple sources: req.adminId, req.userId, req.user.id, req.user._id
+    const adminId = req.adminId || req.userId || req.user?.id || req.user?._id || req.user?.userId;
+    
+    // Debug logging
+    console.log('createClass - req.adminId:', req.adminId);
+    console.log('createClass - req.userId:', req.userId);
+    console.log('createClass - req.user:', req.user);
+    console.log('createClass - adminId to use:', adminId);
+    console.log('createClass - Request body:', { classNumber, section, description });
+    
+    if (!adminId) {
+      console.error('createClass - No admin ID found in request');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Admin ID not found. Please ensure you are authenticated as an admin. Try logging out and logging back in.' 
+      });
+    }
+    
+    // Validate required fields
+    if (!classNumber || !section) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Class number and section are required' 
+      });
+    }
+
+    if (!['A', 'B', 'C'].includes(section)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Section must be A, B, or C' 
+      });
+    }
+    
+    // Get admin to inherit board and school
+    // Try to find admin by ID (MongoDB ObjectId or string)
+    let admin = null;
+    try {
+      // Try as ObjectId first
+      if (mongoose.Types.ObjectId.isValid(adminId)) {
+        admin = await User.findById(adminId).select('board schoolName role fullName email');
+      } else {
+        // If not valid ObjectId, try finding by email or other field
+        console.log('adminId is not a valid ObjectId, trying alternative lookup');
+        admin = await User.findOne({ 
+          $or: [
+            { _id: adminId },
+            { email: req.user?.email }
+          ]
+        }).select('board schoolName role fullName email');
+      }
+    } catch (dbError) {
+      console.error('Database error finding admin:', dbError);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error while finding admin' 
+      });
+    }
+    
+    console.log('createClass - Found admin:', admin ? { 
+      id: admin._id, 
+      role: admin.role, 
+      board: admin.board,
+      schoolName: admin.schoolName,
+      email: admin.email
+    } : 'null');
+    
+    if (!admin) {
+      return res.status(404).json({ 
+        success: false, 
+        message: `Admin not found with ID: ${adminId}. Please ensure you are logged in as an admin.` 
+      });
+    }
+    
+    if (admin.role !== 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: `User with ID ${adminId} is not an admin. Role: ${admin.role}. Please log in as an admin.` 
+      });
+    }
+
+    if (!admin.board) {
+      return res.status(400).json({ success: false, message: 'Admin must have a board assigned' });
+    }
+
+    // Check if class already exists (classNumber + section + admin)
+    const existingClass = await Class.findOne({
+      classNumber: classNumber.trim(),
+      section: section,
+      assignedAdmin: adminId
+    });
+
+    if (existingClass) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Class ${classNumber}${section} already exists. Cannot create duplicate classes.` 
+      });
+    }
+
+    // Create full class name
+    const fullClassName = `Class ${classNumber}${section}`;
+    
+    // Create new class
+    const newClass = new Class({
+      classNumber: classNumber.trim(),
+      section: section,
+      name: fullClassName,
+      description: description?.trim() || '',
+      board: admin.board,
+      school: admin.schoolName || '',
+      assignedAdmin: adminId,
+      isActive: true,
+      assignedSubjects: []
+    });
+
+    await newClass.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Class created successfully',
+      data: {
+        id: newClass._id,
+        classNumber: newClass.classNumber,
+        section: newClass.section,
+        name: newClass.name,
+        description: newClass.description,
+        board: newClass.board,
+        school: newClass.school,
+        assignedAdmin: newClass.assignedAdmin
+      }
+    });
+  } catch (error) {
+    console.error('Failed to create class:', error);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create class';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = `Validation error: ${Object.values(error.errors).map((e) => e.message).join(', ')}`;
+    } else if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      errorMessage = `Class ${req.body.classNumber}${req.body.section} already exists`;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+export const assignSubjectsToClass = async (req, res) => {
+  try {
+    let { classNumber } = req.params;
+    const { subjectIds } = req.body;
+    const adminId = req.adminId;
+
+    console.log('Assign subjects to class request:', { classNumber, subjectIds, adminId });
+
+    if (!classNumber || !subjectIds || !Array.isArray(subjectIds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Class number and subject IDs array are required'
+      });
+    }
+
+    if (!adminId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Admin ID is required'
+      });
+    }
+
+    // Normalize classNumber - handle formats like "Class-9" or "9"
+    // Remove "Class-" prefix if present
+    if (classNumber.startsWith('Class-')) {
+      classNumber = classNumber.replace('Class-', '');
+    }
+    // Also handle URL encoding
+    classNumber = decodeURIComponent(classNumber);
+
+    // Validate that classNumber is not an ObjectId (should be a string like "10", "11", etc.)
+    if (mongoose.Types.ObjectId.isValid(classNumber) && classNumber.length === 24) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid class number format. Please select a class number (e.g., "10", "11"), not a class ID.'
+      });
+    }
+
+    console.log('Normalized classNumber:', classNumber);
+
+    // Validate subject IDs format (should be MongoDB ObjectIds)
+    const validSubjectIds = subjectIds.filter(id => {
+      try {
+        return mongoose.Types.ObjectId.isValid(id);
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (validSubjectIds.length !== subjectIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'One or more subject IDs are invalid format'
+      });
+    }
+
+    // Validate that all subject IDs exist
+    const subjects = await Subject.find({ _id: { $in: validSubjectIds } });
+    
+    if (subjects.length !== validSubjectIds.length) {
+      return res.status(400).json({
+        success: false,
+        message: `One or more subject IDs are invalid. Found ${subjects.length} out of ${validSubjectIds.length} subjects.`
+      });
+    }
+
+    // Validate adminId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(adminId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid admin ID format'
+      });
+    }
+
+    // Find all classes with this classNumber (all sections: A, B, C)
+    const classesWithThisNumber = await Class.find({ 
+      classNumber: classNumber,
+      assignedAdmin: adminId,
+      isActive: true
+    });
+
+    console.log(`Found ${classesWithThisNumber.length} classes with classNumber ${classNumber}`);
+
+    if (classesWithThisNumber.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: `No classes found with class number ${classNumber}. Please create classes first.`
+      });
+    }
+
+    // Update all classes (all sections) with the same subjects
+    const updatePromises = classesWithThisNumber.map(async (classDoc) => {
+      // Use updateOne to avoid validation issues with save()
+      await Class.updateOne(
+        { _id: classDoc._id },
+        { 
+          $set: { 
+            assignedSubjects: validSubjectIds,
+            updatedAt: new Date()
+          }
+        }
+      );
+      console.log(`Updated class ${classDoc.classNumber}${classDoc.section} with subjects`);
+      // Reload the document to get updated data
+      return await Class.findById(classDoc._id);
+    });
+
+    const updatedClasses = await Promise.all(updatePromises);
+
+    // Populate subjects for response
+    await Promise.all(updatedClasses.map(c => c.populate('assignedSubjects')));
+
+    console.log(`Updated ${updatedClasses.length} classes with subjects:`, updatedClasses.map(c => `${c.classNumber}${c.section}`));
+
+    res.json({
+      success: true,
+      message: `Subjects assigned to all sections of Class ${classNumber} successfully`,
+      data: {
+        classNumber: classNumber,
+        sectionsUpdated: updatedClasses.length,
+        sections: updatedClasses.map(c => ({
+          section: c.section,
+          name: c.name,
+          assignedSubjects: c.assignedSubjects
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Assign subjects to class error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to assign subjects to class',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     });
   }
 };

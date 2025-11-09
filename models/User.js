@@ -55,6 +55,12 @@ const userSchema = new mongoose.Schema({
     ref: 'Teacher',
     default: null
   },
+  // Class assigned to student (references Class model)
+  assignedClass: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Class',
+    default: null
+  },
   // Subjects assigned to student by admin
   assignedSubjects: [{
     type: mongoose.Schema.Types.ObjectId,

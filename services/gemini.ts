@@ -29,7 +29,7 @@ export class GeminiService {
   ): Promise<string> {
     try {
       // Build context-aware prompt
-      let systemPrompt = `You are an AI tutor for Asli Learn, an educational platform. You help students with their studies across various subjects including Physics, Chemistry, Mathematics, and Biology.
+      let systemPrompt = `You are a Vidya AI for Asli Learn, an educational platform. You help students with their studies across various subjects including Physics, Chemistry, Mathematics, and Biology.
 
 Your role is to:
 1. Provide clear, educational explanations
@@ -58,11 +58,11 @@ Guidelines:
       if (chatHistory.length > 0) {
         conversationHistory = '\n\nPrevious conversation:\n';
         chatHistory.slice(-10).forEach(msg => { // Keep last 10 messages for context
-          conversationHistory += `${msg.role === 'user' ? 'Student' : 'AI Tutor'}: ${msg.content}\n`;
+          conversationHistory += `${msg.role === 'user' ? 'Student' : 'Vidya AI'}: ${msg.content}\n`;
         });
       }
 
-      const fullPrompt = `${systemPrompt}${conversationHistory}\n\nStudent: ${message}\n\nAI Tutor:`;
+      const fullPrompt = `${systemPrompt}${conversationHistory}\n\nStudent: ${message}\n\nVidya AI:`;
 
       const result = await this.model.generateContent(fullPrompt);
       const response = await result.response;
@@ -77,7 +77,7 @@ Guidelines:
     try {
       const model = genAI.getGenerativeModel({ model: 'gemini-pro-vision' });
       
-      const prompt = `You are an AI tutor. Analyze this image and provide educational assistance. 
+      const prompt = `You are a Vidya AI. Analyze this image and provide educational assistance. 
       ${context ? `Context: ${context}` : ''}
       
       Please:

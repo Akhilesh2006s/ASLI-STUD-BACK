@@ -19,6 +19,36 @@ const router = express.Router();
 // Apply authentication middleware to all routes
 router.use(verifyToken);
 
+// Middleware to validate userId is a valid ObjectId and user is a student
+router.use((req, res, next) => {
+  if (!req.userId) {
+    return res.status(401).json({
+      success: false,
+      message: 'User ID not found. Please log in again.'
+    });
+  }
+  
+  // Check if userId is a valid MongoDB ObjectId
+  if (!mongoose.Types.ObjectId.isValid(req.userId)) {
+    console.error('❌ Invalid userId format:', req.userId, 'Type:', typeof req.userId);
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid user ID format. Please log in again.'
+    });
+  }
+  
+  // Verify user is a student
+  if (req.user && req.user.role !== 'student') {
+    console.error('❌ Non-student trying to access student routes:', req.user.role);
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. Student privileges required.'
+    });
+  }
+  
+  next();
+});
+
 // Get student's assigned admin and filter content accordingly
 const getStudentAdminId = async (req, res, next) => {
   try {
@@ -47,16 +77,6 @@ router.get('/videos', async (req, res) => {
   try {
     const { subject } = req.query;
     
-    // Check if userId is set
-    if (!req.userId) {
-      console.error('req.userId is not set in videos endpoint');
-      return res.status(401).json({ 
-        success: false, 
-        message: 'User not authenticated',
-        data: [],
-        videos: []
-      });
-    }
     
     // Get student to find their board (from assigned admin)
     const student = await User.findById(req.userId)
@@ -273,14 +293,13 @@ router.get('/videos', async (req, res) => {
       console.log('Video query (could not stringify):', query);
     }
     
-    // Get Super Admin exclusive content (videos) for this student's board
+    // Get Super Admin exclusive content for this student's board
     let exclusiveVideos = [];
     if (student.board) {
       try {
         // Build query for exclusive content
         let exclusiveQuery = {
           board: student.board,
-          type: 'video',
           isActive: true,
           isExclusive: true
         };
@@ -757,17 +776,25 @@ router.get('/assessments', async (req, res) => {
     console.log('Found assessments after filter:', assessments.length);
     
     // If subject filter applied but no results, try without subject filter (for debugging)
-    if (subject && assessments.length === 0 && allAssessments.length > 0) {
-      console.log('WARNING: Subject filter returned 0 results but assessments exist');
-      console.log('Returning all assessments without subject filter for debugging');
-      
-      assessments = await Assessment.find({
+    if (subject && assessments.length === 0) {
+      // Check if there are any assessments at all for these teachers
+      const allAssessments = await Assessment.find({
         isPublished: true,
-        createdBy: teacherId
-      })
-      .populate('createdBy', 'fullName email')
-      .sort({ createdAt: -1 });
-      console.log('All assessments (no subject filter):', assessments.length);
+        createdBy: { $in: teacherIds }
+      }).limit(1);
+      
+      if (allAssessments.length > 0) {
+        console.log('WARNING: Subject filter returned 0 results but assessments exist');
+        console.log('Returning all assessments without subject filter for debugging');
+        
+        assessments = await Assessment.find({
+          isPublished: true,
+          createdBy: { $in: teacherIds }
+        })
+        .populate('createdBy', 'fullName email')
+        .sort({ createdAt: -1 });
+        console.log('All assessments (no subject filter):', assessments.length);
+      }
     }
     
     if (assessments.length > 0) {
@@ -882,7 +909,7 @@ router.get('/exams/:examId', async (req, res) => {
   }
 });
 
-// Get Asli Prep Exclusive Content (filtered by board)
+// Get Asli Prep Exclusive Content (filtered by board and class assigned subjects)
 router.get('/asli-prep-content', async (req, res) => {
   try {
     const { subject, type, topic } = req.query;
@@ -890,7 +917,9 @@ router.get('/asli-prep-content', async (req, res) => {
     console.log('📚 Fetching Asli Prep content for student:', req.userId);
     console.log('Query params:', { subject, type, topic });
     
-    const student = await User.findById(req.userId);
+    const student = await User.findById(req.userId)
+      .populate('assignedAdmin', 'board')
+      .populate('assignedClass', 'classNumber section assignedSubjects');
     
     if (!student) {
       console.log('❌ Student not found');
@@ -928,17 +957,76 @@ router.get('/asli-prep-content', async (req, res) => {
     studentBoard = studentBoard.toUpperCase();
     console.log('🔍 Final student board:', studentBoard);
 
-    // Build query
+    // Get subjects assigned to student's class
+    const Subject = (await import('../models/Subject.js')).default;
+    const Class = (await import('../models/Class.js')).default;
+    let classSubjectIds = [];
+    
+    // Get subjects from assignedClass
+    if (student.assignedClass) {
+      let studentClass;
+      if (typeof student.assignedClass === 'object' && student.assignedClass._id) {
+        studentClass = student.assignedClass;
+      } else {
+        studentClass = await Class.findById(student.assignedClass)
+          .populate('assignedSubjects');
+      }
+      
+      if (studentClass && studentClass.assignedSubjects && studentClass.assignedSubjects.length > 0) {
+        classSubjectIds = studentClass.assignedSubjects.map(subj => 
+          subj._id ? subj._id : subj
+        );
+        console.log(`📚 Found ${classSubjectIds.length} subjects from assigned class`);
+      }
+    }
+    
+    // Fallback: If no assignedClass, try to find class by classNumber
+    if (classSubjectIds.length === 0 && student.classNumber && student.classNumber !== 'Unassigned') {
+      const studentClass = await Class.findOne({
+        classNumber: student.classNumber,
+        assignedAdmin: student.assignedAdmin,
+        isActive: true
+      })
+      .populate('assignedSubjects');
+      
+      if (studentClass && studentClass.assignedSubjects && studentClass.assignedSubjects.length > 0) {
+        classSubjectIds = studentClass.assignedSubjects.map(subj => 
+          subj._id ? subj._id : subj
+        );
+        console.log(`📚 Found ${classSubjectIds.length} subjects from class ${studentClass.classNumber}`);
+      }
+    }
+    
+    if (classSubjectIds.length === 0) {
+      console.log('❌ Student has no subjects assigned to their class');
+      return res.json({
+        success: true,
+        data: [],
+        message: 'No subjects assigned to your class. Please contact your administrator.'
+      });
+    }
+
+    // Build query - filter by board AND class assigned subjects
     const query = {
       board: studentBoard,
+      subject: { $in: classSubjectIds },
       isActive: true,
       isExclusive: true
     };
 
+    // If specific subject is requested, validate it's in class assigned subjects
     if (subject && subject !== 'all') {
-      // Validate ObjectId format
       if (mongoose.Types.ObjectId.isValid(subject)) {
-        query.subject = subject;
+        const subjectId = new mongoose.Types.ObjectId(subject);
+        if (classSubjectIds.some(id => id.toString() === subjectId.toString())) {
+          query.subject = subjectId;
+        } else {
+          console.log('⚠️ Requested subject not in class assigned subjects');
+          return res.json({
+            success: true,
+            data: []
+          });
+        }
       }
     }
     
@@ -956,7 +1044,7 @@ router.get('/asli-prep-content', async (req, res) => {
       .populate('subject', 'name')
       .sort({ createdAt: -1 });
 
-    console.log(`✅ Found ${contents.length} contents for board ${studentBoard}`);
+    console.log(`✅ Found ${contents.length} contents for student's class subjects`);
 
     res.json({
       success: true,
@@ -966,6 +1054,348 @@ router.get('/asli-prep-content', async (req, res) => {
     console.error('❌ Error fetching Asli Prep content:', error);
     console.error('Error stack:', error.stack);
     res.status(500).json({ success: false, message: 'Failed to fetch content', error: error.message });
+  }
+});
+
+// Get IQ/Rank Boost questions for student (filtered by class)
+router.get('/iq-rank-questions', async (req, res) => {
+  try {
+    const { classNumber, subject, difficulty } = req.query;
+    
+    const student = await User.findById(req.userId)
+      .populate('assignedClass', 'classNumber');
+    if (!student) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // Get student's class number - check assignedClass first, then classNumber field
+    let studentClassNumber = classNumber;
+    if (!studentClassNumber) {
+      if (student.assignedClass && student.assignedClass.classNumber) {
+        studentClassNumber = student.assignedClass.classNumber;
+      } else if (student.classNumber) {
+        studentClassNumber = student.classNumber;
+      }
+    }
+    
+    if (!studentClassNumber || studentClassNumber === 'Unassigned') {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'No class assigned. Please contact your administrator.'
+      });
+    }
+
+    const IQRankQuestion = (await import('../models/IQRankQuestion.js')).default;
+
+    // Build query - filter by student's class
+    const query = {
+      classNumber: studentClassNumber.toString(),
+      isActive: true
+    };
+
+    // Optional filters
+    if (subject && subject !== 'all') {
+      query.subject = subject;
+    }
+    if (difficulty && difficulty !== 'all') {
+      query.difficulty = difficulty;
+    }
+
+    const questions = await IQRankQuestion.find(query)
+      .populate('subject', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: questions,
+      questions: questions,
+      classNumber: studentClassNumber.toString()
+    });
+  } catch (error) {
+    console.error('Error fetching IQ/Rank questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch questions'
+    });
+  }
+});
+
+// Save IQ/Rank Boost quiz result
+router.post('/iq-rank-quiz-result', async (req, res) => {
+  try {
+    const { subjectId, totalQuestions, correctAnswers, incorrectAnswers, unattempted, score, answers } = req.body;
+    
+    if (!subjectId || totalQuestions === undefined || score === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields'
+      });
+    }
+
+    const student = await User.findById(req.userId)
+      .populate('assignedClass', 'classNumber');
+    
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: 'Student not found'
+      });
+    }
+
+    // Get student's class number
+    let studentClassNumber = null;
+    if (student.assignedClass && student.assignedClass.classNumber) {
+      studentClassNumber = student.assignedClass.classNumber;
+    } else if (student.classNumber) {
+      studentClassNumber = student.classNumber;
+    }
+
+    if (!studentClassNumber || studentClassNumber === 'Unassigned') {
+      return res.status(400).json({
+        success: false,
+        message: 'No class assigned. Please contact your administrator.'
+      });
+    }
+
+    const IQRankQuizResult = (await import('../models/IQRankQuizResult.js')).default;
+
+    // Check if result already exists for this user and subject
+    const existingResult = await IQRankQuizResult.findOne({
+      userId: req.userId,
+      subject: subjectId
+    });
+
+    const resultData = {
+      userId: req.userId,
+      subject: subjectId,
+      classNumber: studentClassNumber.toString(),
+      totalQuestions,
+      correctAnswers: correctAnswers || 0,
+      incorrectAnswers: incorrectAnswers || 0,
+      unattempted: unattempted || 0,
+      score,
+      answers: answers || {},
+      completedAt: new Date()
+    };
+
+    let quizResult;
+    if (existingResult) {
+      // Update existing result
+      quizResult = await IQRankQuizResult.findByIdAndUpdate(
+        existingResult._id,
+        resultData,
+        { new: true }
+      ).populate('subject', 'name');
+    } else {
+      // Create new result
+      quizResult = new IQRankQuizResult(resultData);
+      await quizResult.save();
+      await quizResult.populate('subject', 'name');
+    }
+
+    res.json({
+      success: true,
+      message: 'Quiz result saved successfully',
+      data: quizResult
+    });
+  } catch (error) {
+    console.error('Error saving quiz result:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to save quiz result'
+    });
+  }
+});
+
+// Get IQ/Rank Boost quiz results for student (grouped by subject)
+router.get('/iq-rank-quiz-results', async (req, res) => {
+  try {
+    const IQRankQuizResult = (await import('../models/IQRankQuizResult.js')).default;
+
+    const results = await IQRankQuizResult.find({
+      userId: req.userId
+    })
+      .populate('subject', 'name')
+      .sort({ completedAt: -1 });
+
+    // Group results by subject (get latest result per subject)
+    const subjectResults = new Map();
+    results.forEach((result) => {
+      const subjectId = result.subject._id.toString();
+      if (!subjectResults.has(subjectId)) {
+        subjectResults.set(subjectId, {
+          subjectId: subjectId,
+          subjectName: result.subject.name,
+          score: result.score,
+          totalQuestions: result.totalQuestions,
+          correctAnswers: result.correctAnswers,
+          completedAt: result.completedAt
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      data: Array.from(subjectResults.values())
+    });
+  } catch (error) {
+    console.error('Error fetching quiz results:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch quiz results'
+    });
+  }
+});
+
+// Submit homework
+router.post('/homework-submission', async (req, res) => {
+  try {
+    const { homeworkId, submissionLink, description } = req.body;
+    
+    if (!homeworkId || !submissionLink) {
+      return res.status(400).json({
+        success: false,
+        message: 'Homework ID and submission link are required'
+      });
+    }
+
+    // Validate URL format
+    try {
+      new URL(submissionLink);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid URL format for submission link'
+      });
+    }
+
+    // Get homework content to verify it exists and get subject
+    const Content = (await import('../models/Content.js')).default;
+    const homework = await Content.findById(homeworkId)
+      .populate('subject', 'name');
+    
+    if (!homework) {
+      return res.status(404).json({
+        success: false,
+        message: 'Homework not found'
+      });
+    }
+
+    if (homework.type !== 'Homework') {
+      return res.status(400).json({
+        success: false,
+        message: 'Content is not a homework assignment'
+      });
+    }
+
+    const HomeworkSubmission = (await import('../models/HomeworkSubmission.js')).default;
+
+    // Check if submission already exists
+    const existingSubmission = await HomeworkSubmission.findOne({
+      homeworkId: homeworkId,
+      studentId: req.userId
+    });
+
+    const submissionData = {
+      homeworkId: homeworkId,
+      studentId: req.userId,
+      subjectId: homework.subject._id || homework.subject,
+      submissionLink: submissionLink.trim(),
+      description: description ? description.trim() : '',
+      isMarkedAsDone: true,
+      submittedAt: new Date()
+    };
+
+    let submission;
+    if (existingSubmission) {
+      // Update existing submission
+      submission = await HomeworkSubmission.findByIdAndUpdate(
+        existingSubmission._id,
+        submissionData,
+        { new: true }
+      )
+        .populate('homeworkId', 'title fileUrl deadline')
+        .populate('subjectId', 'name');
+    } else {
+      // Create new submission
+      submission = new HomeworkSubmission(submissionData);
+      await submission.save();
+      await submission.populate('homeworkId', 'title fileUrl deadline');
+      await submission.populate('subjectId', 'name');
+    }
+
+    res.json({
+      success: true,
+      message: 'Homework submitted successfully',
+      data: submission
+    });
+  } catch (error) {
+    console.error('Error submitting homework:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit homework'
+    });
+  }
+});
+
+// Get homework submission for a specific homework
+router.get('/homework-submission/:homeworkId', async (req, res) => {
+  try {
+    const { homeworkId } = req.params;
+
+    const HomeworkSubmission = (await import('../models/HomeworkSubmission.js')).default;
+
+    const submission = await HomeworkSubmission.findOne({
+      homeworkId: homeworkId,
+      studentId: req.userId
+    })
+      .populate('homeworkId', 'title fileUrl deadline')
+      .populate('subjectId', 'name');
+
+    if (!submission) {
+      return res.json({
+        success: true,
+        data: null,
+        message: 'No submission found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: submission
+    });
+  } catch (error) {
+    console.error('Error fetching homework submission:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch homework submission'
+    });
+  }
+});
+
+// Get all homework submissions for student
+router.get('/homework-submissions', async (req, res) => {
+  try {
+    const HomeworkSubmission = (await import('../models/HomeworkSubmission.js')).default;
+
+    const submissions = await HomeworkSubmission.find({
+      studentId: req.userId
+    })
+      .populate('homeworkId', 'title fileUrl deadline type')
+      .populate('subjectId', 'name')
+      .sort({ submittedAt: -1 });
+
+    res.json({
+      success: true,
+      data: submissions
+    });
+  } catch (error) {
+    console.error('Error fetching homework submissions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch homework submissions'
+    });
   }
 });
 
@@ -1015,12 +1445,14 @@ router.get('/exam-results', async (req, res) => {
 router.get('/rankings', getAllStudentRankings);
 router.get('/exams/:examId/ranking', getStudentExamRanking);
 
-// Get student's subjects (from assigned admin's subjects)
+// Get student's subjects (from assigned class's subjects)
+// Students can ONLY see subjects that have been assigned to their class by the admin
 router.get('/subjects', async (req, res) => {
   try {
-    // Get student with assigned admin
+    // Get student with assigned admin and assignedClass
     const student = await User.findById(req.userId)
       .populate('assignedAdmin', 'board')
+      .populate('assignedClass', 'classNumber section assignedSubjects')
       .select('-password');
     
     if (!student) {
@@ -1036,7 +1468,7 @@ router.get('/subjects', async (req, res) => {
       });
     }
     
-    // Get admin's board to filter subjects (same as admin's Subject Management)
+    // Get admin's board to filter subjects
     const admin = await User.findById(student.assignedAdmin);
     if (!admin) {
       console.error('Admin not found for student:', student.email);
@@ -1060,13 +1492,77 @@ router.get('/subjects', async (req, res) => {
       });
     }
     
-    // Get all subjects for the admin's board (exactly what admin sees in Subject Management)
     const Subject = (await import('../models/Subject.js')).default;
-    const subjects = await Subject.find({ 
-      board: adminBoard, 
-      isActive: true 
-    })
-    .sort({ name: 1 });
+    let subjects = [];
+    
+    // Get subjects ONLY from the student's assigned class (assignedClass field)
+    // This ensures students only see subjects that have been explicitly assigned by the admin
+    const Class = (await import('../models/Class.js')).default;
+    
+    // First, try to get subjects from assignedClass (the Class document reference)
+    if (student.assignedClass) {
+      // Populate if it's not already populated
+      let studentClass;
+      if (typeof student.assignedClass === 'object' && student.assignedClass._id) {
+        // Already populated, use it
+        studentClass = student.assignedClass;
+      } else {
+        // Not populated, fetch it
+        studentClass = await Class.findById(student.assignedClass)
+          .populate('assignedSubjects');
+      }
+      
+      if (studentClass && studentClass.assignedSubjects && studentClass.assignedSubjects.length > 0) {
+        // Get subjects assigned to the class
+        const subjectIds = studentClass.assignedSubjects.map(subj => 
+          subj._id ? subj._id : subj
+        );
+        subjects = await Subject.find({ 
+          _id: { $in: subjectIds },
+          isActive: true 
+        })
+        .sort({ name: 1 });
+        
+        console.log(`📚 Found ${subjects.length} subjects from assigned class ${studentClass.classNumber}${studentClass.section || ''}`);
+      }
+    }
+    
+    // Fallback: If no assignedClass, try to find class by classNumber and assignedAdmin
+    // This handles cases where assignedClass might not be set but classNumber is
+    if (subjects.length === 0 && student.classNumber && student.classNumber !== 'Unassigned') {
+      console.log(`📚 No assignedClass found, trying to find class by classNumber ${student.classNumber}`);
+      const studentClass = await Class.findOne({
+        classNumber: student.classNumber,
+        assignedAdmin: student.assignedAdmin,
+        isActive: true
+      })
+      .populate('assignedSubjects');
+      
+      if (studentClass && studentClass.assignedSubjects && studentClass.assignedSubjects.length > 0) {
+        const subjectIds = studentClass.assignedSubjects.map(subj => 
+          subj._id ? subj._id : subj
+        );
+        subjects = await Subject.find({ 
+          _id: { $in: subjectIds },
+          isActive: true 
+        })
+        .sort({ name: 1 });
+        
+        console.log(`📚 Found ${subjects.length} subjects from class ${studentClass.classNumber}${studentClass.section || ''}`);
+      }
+    }
+    
+    // If no subjects found, return empty array (NO FALLBACK to all board subjects)
+    // Students should only see subjects explicitly assigned by admin
+    if (subjects.length === 0) {
+      console.log('📚 No subjects assigned to student\'s class. Student will see no subjects.');
+      return res.json({
+        success: true,
+        subjects: [],
+        data: [],
+        message: 'No subjects have been assigned to your class yet. Please contact your administrator.'
+      });
+    }
     
     // Get teachers assigned to this admin who teach these subjects
     const Teacher = (await import('../models/Teacher.js')).default;

@@ -1,12 +1,14 @@
 import express from 'express';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Teacher from '../models/Teacher.js';
 import Video from '../models/Video.js';
 import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
 import Question from '../models/Question.js';
+import Content from '../models/Content.js';
 import {
   verifyToken,
   verifyAdmin,
@@ -28,10 +30,15 @@ import {
   assignSubjects,
   assignClasses,
   assignSubjectsToStudent,
+  assignClassToStudent,
+  assignSubjectsToClass,
   getTeacherDashboardStats,
   getVideos,
   getAssessments,
-  getAnalytics
+  getAnalytics,
+  getClasses,
+  createClass,
+  deleteClass
 } from '../controllers/adminController.js';
 import {
   getViewableExams,
@@ -68,6 +75,13 @@ router.post('/students', addAdminIdToBody, createStudent);
 router.put('/students/:id', verifyDataOwnership(User), updateStudent);
 router.delete('/students/:id', verifyDataOwnership(User), deleteStudent);
 router.post('/students/:studentId/assign-subjects', assignSubjectsToStudent);
+router.post('/students/:studentId/assign-class', assignClassToStudent);
+
+// Class Management Routes
+router.get('/classes', getClasses);
+router.post('/classes', createClass);
+router.delete('/classes/:id', deleteClass);
+router.post('/classes/:classNumber/assign-subjects', assignSubjectsToClass);
 
 // Teacher Management Routes
 router.get('/teachers', getTeachers);
@@ -204,6 +218,81 @@ router.get('/exams/viewable', getViewableExams); // View Super Admin created exa
 router.get('/exams/:examId/view', getExamDetails); // View exam details
 router.get('/exam-results', getStudentExamResults); // View student exam results with filters
 router.get('/exams/:examId/analytics', getExamPerformanceAnalytics); // View exam performance analytics
+
+// Get Asli Prep content for admin's board
+router.get('/asli-prep-content', async (req, res) => {
+  try {
+    const { subject, type, topic } = req.query;
+    const adminId = req.adminId;
+    
+    console.log('📚 Fetching Asli Prep content for admin:', adminId);
+    console.log('Query params:', { subject, type, topic });
+    
+    // Get admin to find their board
+    const admin = await User.findById(adminId).select('board');
+    
+    if (!admin) {
+      console.log('❌ Admin not found');
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    const adminBoard = admin.board;
+    
+    if (!adminBoard) {
+      console.log('❌ Admin does not have board assigned');
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+    
+    // Ensure board is uppercase to match Content model
+    const boardUpper = adminBoard.toUpperCase();
+    console.log('🔍 Admin board:', boardUpper);
+    
+    // Build query - filter by admin's board
+    const query = {
+      board: boardUpper,
+      isActive: true,
+      isExclusive: true
+    };
+    
+    // If specific subject is requested
+    if (subject && subject !== 'all') {
+      if (mongoose.Types.ObjectId.isValid(subject)) {
+        query.subject = subject;
+      }
+    }
+    
+    if (type && type !== 'all') {
+      query.type = type;
+    }
+    
+    if (topic && topic.trim()) {
+      query.topic = { $regex: topic.trim(), $options: 'i' };
+    }
+    
+    console.log('📋 Content query:', JSON.stringify(query, null, 2));
+    
+    const contents = await Content.find(query)
+      .populate('subject', 'name')
+      .sort({ createdAt: -1 });
+    
+    console.log(`✅ Found ${contents.length} contents for admin's board ${boardUpper}`);
+    
+    res.json({
+      success: true,
+      data: contents
+    });
+  } catch (error) {
+    console.error('❌ Error fetching Asli Prep content for admin:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Failed to fetch content', error: error.message });
+  }
+});
 
 // Removed: POST /exams, PUT /exams/:id, DELETE /exams/:id
 // Removed: POST /exams/:examId/questions, PUT /questions/:questionId, DELETE /questions/:questionId

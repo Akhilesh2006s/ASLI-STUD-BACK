@@ -61,12 +61,18 @@ export const extractTeacherId = (req, res, next) => {
 
 // Enhanced middleware to extract admin ID and add to request
 export const extractAdminId = (req, res, next) => {
-  if (req.user.role === 'admin') {
+  console.log('extractAdminId middleware - req.user:', req.user);
+  console.log('extractAdminId middleware - req.userId:', req.userId);
+  
+  if (req.user && req.user.role === 'admin') {
     req.adminId = req.userId;
-  } else if (req.user.role === 'super-admin') {
+    console.log('extractAdminId - Set req.adminId to:', req.adminId);
+  } else if (req.user && req.user.role === 'super-admin') {
     // Super admin can access all data, so we don't set adminId filter
     req.adminId = null;
+    console.log('extractAdminId - Super admin, req.adminId set to null');
   } else {
+    console.log('extractAdminId - User role is not admin:', req.user?.role);
     return res.status(403).json({ success: false, message: 'Access denied. Admin privileges required.' });
   }
   next();

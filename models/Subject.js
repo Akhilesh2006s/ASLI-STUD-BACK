@@ -16,6 +16,10 @@ const subjectSchema = new mongoose.Schema({
     enum: ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'],
     uppercase: true
   },
+  classNumber: {
+    type: String,
+    trim: true
+  },
   description: {
     type: String,
     trim: true
@@ -36,6 +40,10 @@ const subjectSchema = new mongoose.Schema({
 // Compound index to ensure unique subject name per board
 subjectSchema.index({ name: 1, board: 1 }, { unique: true });
 subjectSchema.index({ board: 1 });
+subjectSchema.index({ classNumber: 1 });
+subjectSchema.index({ board: 1, classNumber: 1 });
 subjectSchema.index({ isActive: 1 });
+// Sparse unique index on code - only unique for non-null values
+subjectSchema.index({ code: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model('Subject', subjectSchema);

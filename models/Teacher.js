@@ -25,6 +25,16 @@ const teacherSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  school: {
+    type: String,
+    default: ''
+  },
+  board: {
+    type: String,
+    enum: ['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'],
+    uppercase: true,
+    default: null
+  },
   qualifications: {
     type: String,
     default: ''
@@ -59,9 +69,13 @@ const teacherSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Update the updatedAt field before saving
+// Pre-save hook to handle null board values (enum doesn't accept null)
 teacherSchema.pre('save', function(next) {
   this.updatedAt = new Date();
+  // Convert null/undefined/empty string to undefined so enum validation is skipped
+  if (this.board === null || this.board === '' || this.board === undefined) {
+    this.board = undefined;
+  }
   next();
 });
 

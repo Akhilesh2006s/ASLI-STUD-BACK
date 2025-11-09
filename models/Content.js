@@ -12,7 +12,7 @@ const contentSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['video', 'pdf', 'ppt', 'note', 'other'],
+    enum: ['TextBook', 'Workbook', 'Material', 'Video', 'Audio', 'Homework'],
     required: true
   },
   board: {
@@ -26,9 +26,17 @@ const contentSchema = new mongoose.Schema({
     ref: 'Subject',
     required: true
   },
+  classNumber: {
+    type: String,
+    trim: true
+  },
   topic: {
     type: String,
     trim: true
+  },
+  date: {
+    type: Date,
+    required: true
   },
   fileUrl: {
     type: String,
@@ -65,6 +73,10 @@ const contentSchema = new mongoose.Schema({
   downloadCount: {
     type: Number,
     default: 0
+  },
+  deadline: {
+    type: Date, // Deadline for homework submissions
+    required: false
   }
 }, {
   timestamps: true
@@ -73,8 +85,10 @@ const contentSchema = new mongoose.Schema({
 // Indexes for better performance
 contentSchema.index({ board: 1 });
 contentSchema.index({ subject: 1 });
+contentSchema.index({ classNumber: 1 });
 contentSchema.index({ type: 1 });
 contentSchema.index({ board: 1, subject: 1 });
+contentSchema.index({ board: 1, classNumber: 1 });
 contentSchema.index({ isActive: 1 });
 contentSchema.index({ isExclusive: 1 });
 

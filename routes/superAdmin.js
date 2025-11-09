@@ -110,7 +110,7 @@ const contentFileFilter = (req, file, cb) => {
     'audio/x-m4a'
   ];
   
-  if (contentType === 'TextBook' || contentType === 'Workbook' || contentType === 'Material') {
+  if (contentType === 'TextBook' || contentType === 'Workbook' || contentType === 'Material' || contentType === 'Homework') {
     if (documentMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -210,33 +210,32 @@ router.get('/boards/:boardCode/analytics', getBoardAnalytics);
 
 // Subject Management (Super Admin only)
 router.post('/subjects', createSubject);
+router.get('/subjects', async (req, res) => {
+  try {
+    const Subject = (await import('../models/Subject.js')).default;
+    const subjects = await Subject.find({ isActive: true })
+      .sort({ name: 1 });
+    res.json({
+      success: true,
+      data: subjects
+    });
+  } catch (error) {
+    console.error('Error fetching subjects:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch subjects'
+    });
+  }
+});
 router.get('/boards/:board/subjects', getSubjectsByBoard);
 router.delete('/subjects/:subjectId', deleteSubject);
 
 // Class Management (Super Admin only)
 router.get('/classes', getAllClasses);
 
-// ============================================
-// Content Management Routes
-// IMPORTANT: More specific routes MUST come before less specific ones
-// Order: /content/upload-file -> /content/upload-thumbnail -> /content -> /content/:id
-// ============================================
-
-// File upload endpoint for content (MUST be before /content route)
-// Using explicit route definition to ensure it's registered
+// Content Management (Super Admin only - Asli Prep Exclusive)
+// File upload endpoint for content
 router.post('/content/upload-file', (req, res, next) => {
-  console.log('✅✅✅ POST /content/upload-file - Route matched! ✅✅✅');
-  console.log('Full URL:', req.originalUrl);
-  console.log('Request query:', req.query);
-  console.log('Request method:', req.method);
-  console.log('Request path:', req.path);
-  console.log('Request headers:', {
-    'content-type': req.headers['content-type'],
-    'authorization': req.headers['authorization'] ? 'Present' : 'Missing'
-  });
-  next();
-}, (req, res, next) => {
-  // Multer middleware with error handling
   contentUpload.single('file')(req, res, (err) => {
     if (err) {
       console.error('Multer error:', err);
@@ -255,13 +254,6 @@ router.post('/content/upload-file', (req, res, next) => {
   });
 }, (req, res) => {
   try {
-    console.log('File upload handler - req.file:', req.file ? {
-      filename: req.file.filename,
-      originalname: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    } : 'No file');
-    
     if (!req.file) {
       return res.status(400).json({ 
         success: false,
@@ -270,7 +262,7 @@ router.post('/content/upload-file', (req, res, next) => {
     }
 
     const fileUrl = `/uploads/content/${req.file.filename}`;
-    console.log('✅ Content file uploaded successfully:', fileUrl);
+    console.log('Content file uploaded successfully:', fileUrl);
     
     res.json({ 
       success: true,
@@ -281,20 +273,17 @@ router.post('/content/upload-file', (req, res, next) => {
       mimetype: req.file.mimetype
     });
   } catch (error) {
-    console.error('Failed to process uploaded file:', error);
+    console.error('Failed to upload content file:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Failed to process file',
+      message: 'Failed to upload file',
       error: error.message 
     });
   }
 });
 
-// Thumbnail image upload endpoint for content (MUST be before /content route)
+// Thumbnail image upload endpoint for content
 router.post('/content/upload-thumbnail', (req, res, next) => {
-  console.log('✅✅✅ POST /content/upload-thumbnail - Route matched! ✅✅✅');
-  console.log('Full URL:', req.originalUrl);
-  
   thumbnailUpload.single('thumbnail')(req, res, (err) => {
     if (err) {
       console.error('Multer error:', err);
@@ -313,13 +302,6 @@ router.post('/content/upload-thumbnail', (req, res, next) => {
   });
 }, (req, res) => {
   try {
-    console.log('Thumbnail upload handler - req.file:', req.file ? {
-      filename: req.file.filename,
-      originalname: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype
-    } : 'No file');
-    
     if (!req.file) {
       return res.status(400).json({ 
         success: false,
@@ -328,7 +310,7 @@ router.post('/content/upload-thumbnail', (req, res, next) => {
     }
 
     const thumbnailUrl = `/uploads/content/thumbnails/${req.file.filename}`;
-    console.log('✅ Thumbnail uploaded successfully:', thumbnailUrl);
+    console.log('Thumbnail uploaded successfully:', thumbnailUrl);
     
     res.json({ 
       success: true,
@@ -348,10 +330,192 @@ router.post('/content/upload-thumbnail', (req, res, next) => {
   }
 });
 
-// Content CRUD routes (less specific routes come after specific ones)
 router.post('/content', uploadContent);
 router.get('/boards/:board/content', getContentByBoard);
 router.delete('/content/:contentId', deleteContent);
+
+// IQ/Rank Boost Activities Routes
+router.post('/iq-rank-activities/generate-questions', async (req, res) => {
+  try {
+    const { classNumber, numberOfQuestions, difficulty, subjectId } = req.body;
+
+    if (!classNumber || !numberOfQuestions || !difficulty || !subjectId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields: classNumber, numberOfQuestions, difficulty, subjectId'
+      });
+    }
+
+    // Import required models
+    const Subject = (await import('../models/Subject.js')).default;
+    const IQRankQuestion = (await import('../models/IQRankQuestion.js')).default;
+    const { restGeminiService } = await import('../services/rest-gemini.cjs');
+
+    // Get subject details
+    const subject = await Subject.findById(subjectId);
+    if (!subject) {
+      return res.status(404).json({
+        success: false,
+        message: 'Subject not found'
+      });
+    }
+
+    // Generate prompt for Gemini
+    const prompt = `Generate exactly ${numberOfQuestions} multiple-choice questions (MCQ) for:
+- Class Level: Class ${classNumber}
+- Subject: ${subject.name}
+- Difficulty Level: ${difficulty}
+
+IMPORTANT: You MUST return ONLY valid JSON in the following exact format (no markdown, no code blocks, just pure JSON):
+{
+  "questions": [
+    {
+      "questionText": "Question text here",
+      "options": [
+        {"text": "Option A text", "isCorrect": true},
+        {"text": "Option B text", "isCorrect": false},
+        {"text": "Option C text", "isCorrect": false},
+        {"text": "Option D text", "isCorrect": false}
+      ],
+      "correctAnswer": "Option A text",
+      "explanation": "Explanation of why the correct answer is right"
+    }
+  ]
+}
+
+Requirements:
+1. Generate exactly ${numberOfQuestions} questions
+2. All questions must be multiple-choice with exactly 4 options (A, B, C, D)
+3. Each question must have exactly ONE correct answer
+4. Questions should be appropriate for Class ${classNumber} level
+5. Difficulty should match: ${difficulty}
+6. Questions should cover various topics within ${subject.name}
+7. Include clear explanations for each correct answer
+8. Return ONLY the JSON object, no additional text before or after`;
+
+    console.log('🤖 Generating questions with Gemini API...');
+    const geminiResponse = await restGeminiService.generateGeminiResponse(prompt, {}, []);
+
+    // Parse the JSON response from Gemini
+    let questionsData;
+    try {
+      // Try to extract JSON from the response (in case it's wrapped in markdown)
+      let jsonText = geminiResponse.trim();
+      
+      // Remove markdown code blocks if present
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/```\n?/g, '');
+      }
+
+      questionsData = JSON.parse(jsonText);
+    } catch (parseError) {
+      console.error('Error parsing Gemini response:', parseError);
+      console.error('Raw response:', geminiResponse);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to parse AI response. Please try again.',
+        error: parseError.message
+      });
+    }
+
+    if (!questionsData.questions || !Array.isArray(questionsData.questions)) {
+      return res.status(500).json({
+        success: false,
+        message: 'Invalid response format from AI'
+      });
+    }
+
+    // Save questions to database
+    const savedQuestions = [];
+    for (const q of questionsData.questions) {
+      // Ensure options array has correct format
+      const options = q.options.map((opt, index) => ({
+        text: typeof opt === 'string' ? opt : opt.text,
+        isCorrect: typeof opt === 'string' 
+          ? (opt === q.correctAnswer || index === 0) 
+          : (opt.isCorrect || opt.text === q.correctAnswer)
+      }));
+
+      // Find correct answer index if it's a string
+      let correctAnswer = q.correctAnswer;
+      if (typeof q.correctAnswer === 'string') {
+        const correctIndex = options.findIndex(opt => 
+          opt.text === q.correctAnswer || opt.isCorrect
+        );
+        if (correctIndex !== -1) {
+          correctAnswer = options[correctIndex].text;
+        }
+      }
+
+      const question = new IQRankQuestion({
+        questionText: q.questionText || q.question,
+        questionType: 'mcq',
+        options: options,
+        correctAnswer: correctAnswer,
+        explanation: q.explanation || '',
+        difficulty: difficulty,
+        subject: subjectId,
+        classNumber: classNumber.toString(),
+        board: subject.board || null,
+        points: 1,
+        isActive: true,
+        generatedBy: 'super-admin'
+      });
+
+      await question.save();
+      await question.populate('subject', 'name');
+      savedQuestions.push(question);
+    }
+
+    console.log(`✅ Successfully generated and saved ${savedQuestions.length} questions`);
+
+    res.json({
+      success: true,
+      message: `Successfully generated ${savedQuestions.length} questions`,
+      data: {
+        questions: savedQuestions,
+        count: savedQuestions.length
+      }
+    });
+  } catch (error) {
+    console.error('Error generating questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate questions',
+      error: error.message
+    });
+  }
+});
+
+// Get IQ/Rank questions for a class
+router.get('/iq-rank-activities/questions', async (req, res) => {
+  try {
+    const { classNumber, subject, difficulty } = req.query;
+    const IQRankQuestion = (await import('../models/IQRankQuestion.js')).default;
+
+    const query = { isActive: true };
+    if (classNumber) query.classNumber = classNumber;
+    if (subject) query.subject = subject;
+    if (difficulty) query.difficulty = difficulty;
+
+    const questions = await IQRankQuestion.find(query)
+      .populate('subject', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: questions
+    });
+  } catch (error) {
+    console.error('Error fetching questions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch questions'
+    });
+  }
+});
 
 // Exam Management (Super Admin only)
 // Note: Order matters - specific routes before parameterized ones
@@ -400,15 +564,6 @@ console.log('✅ Super Admin exam routes registered:', {
   'PUT /exams/:examId': 'updateExam',
   'DELETE /exams/:examId': 'deleteExam',
   'POST /exams/:examId/questions': 'addQuestion'
-});
-
-// Log all registered content routes for debugging
-console.log('✅ Super Admin content routes registered (in order):', {
-  'POST /content/upload-file': 'File upload (MUST be first)',
-  'POST /content/upload-thumbnail': 'Thumbnail upload',
-  'POST /content': 'Create content',
-  'GET /boards/:board/content': 'Get content by board',
-  'DELETE /content/:contentId': 'Delete content'
 });
 
 export default router;

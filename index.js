@@ -27,12 +27,13 @@ import adminRoutes from './routes/admin.js';
 import teacherRoutes from './routes/teacher.js';
 import studentRoutes from './routes/student.js';
 import aiRoutes from './routes/ai.js';
+import streamRoutes from './routes/streams.js';
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 
 // Configure multer for file uploads
 const upload = multer({ 
@@ -50,12 +51,12 @@ mongoose.connect(MONGO_URI, {
 .then(async () => {
   console.log('Connected to MongoDB Atlas');
   // Initialize boards
-    const { initializeBoards } = await import('./controllers/boardController.js');
-    await initializeBoards();
-    // Seed some sample subjects if none exist
-    await seedSampleData();
-    // Seed class-subject assignments
-    await seedClassSubjects();
+  const { initializeBoards, seedClass10Subjects } = await import('./controllers/boardController.js');
+  await initializeBoards();
+  // Seed class 10 subjects for all boards
+  await seedClass10Subjects();
+  // Seed some sample subjects if none exist
+  seedSampleData();
 })
 .catch(err => console.error('MongoDB connection error:', err));
 
@@ -106,89 +107,6 @@ async function seedSampleData() {
     }
   } catch (error) {
     console.error('Error seeding sample data:', error);
-  }
-}
-
-// Seed class-subject assignments
-async function seedClassSubjects() {
-  try {
-    const ClassSubject = (await import('./models/ClassSubject.js')).default;
-    
-    // Find or create Maths and English subjects for CBSE_AP board
-    let mathSubject = await Subject.findOne({ 
-      name: { $regex: /^Mathematics$/i }, 
-      board: 'CBSE_AP' 
-    });
-    
-    let englishSubject = await Subject.findOne({ 
-      name: { $regex: /^English$/i }, 
-      board: 'CBSE_AP' 
-    });
-
-    // If subjects don't exist, create them
-    if (!mathSubject) {
-      mathSubject = new Subject({
-        name: 'Mathematics',
-        code: 'MATH',
-        description: 'Mathematics for Class 9',
-        board: 'CBSE_AP',
-        isActive: true,
-        createdBy: 'super-admin'
-      });
-      await mathSubject.save();
-      console.log('Created Mathematics subject for CBSE_AP');
-    }
-
-    if (!englishSubject) {
-      englishSubject = new Subject({
-        name: 'English',
-        code: 'ENG',
-        description: 'English Language and Literature for Class 9',
-        board: 'CBSE_AP',
-        isActive: true,
-        createdBy: 'super-admin'
-      });
-      await englishSubject.save();
-      console.log('Created English subject for CBSE_AP');
-    }
-
-    // Find an admin with CBSE_AP board
-    const admin = await User.findOne({ 
-      role: 'admin', 
-      board: 'CBSE_AP' 
-    });
-
-    if (!admin) {
-      console.log('⚠️  No admin found with CBSE_AP board. Skipping class-subject seed.');
-      return;
-    }
-
-    // Check if ClassSubject already exists for class 9 and this admin
-    const existingClassSubject = await ClassSubject.findOne({
-      classNumber: '9',
-      adminId: admin._id
-    });
-
-    if (existingClassSubject) {
-      // Update existing entry
-      existingClassSubject.subjects = [mathSubject._id, englishSubject._id];
-      await existingClassSubject.save();
-      console.log('✅ Updated ClassSubject for Class 9 with Mathematics and English');
-    } else {
-      // Create new entry
-      const classSubject = new ClassSubject({
-        classNumber: '9',
-        adminId: admin._id,
-        subjects: [mathSubject._id, englishSubject._id]
-      });
-      await classSubject.save();
-      console.log('✅ Created ClassSubject for Class 9 with Mathematics and English');
-    }
-
-    console.log(`📚 Class 9 subjects: Mathematics (${mathSubject.name}), English (${englishSubject.name})`);
-  } catch (error) {
-    console.error('Error seeding class-subject data:', error);
-    console.error('Error stack:', error.stack);
   }
 }
 
@@ -286,217 +204,11 @@ app.options('/api/*', (req, res) => {
   res.sendStatus(200);
 });
 
-// Debug middleware to log all super-admin requests BEFORE route matching
-app.use('/api/super-admin', (req, res, next) => {
-  if (req.path.includes('/content')) {
-    console.log(`🔍 [SUPER-ADMIN CONTENT DEBUG] ${req.method} ${req.originalUrl}`);
-    console.log('  Full path:', req.path);
-    console.log('  Base URL:', req.baseUrl);
-    console.log('  Original URL:', req.originalUrl);
-  }
-  next();
-});
-
 // Mount routes
-// IMPORTANT: Mount super admin routes before any catch-all or conflicting routes
 app.use('/api/super-admin', superAdminRoutes);
-
-// Debug middleware to log all /api/admin/classes requests
-app.use('/api/admin/classes', (req, res, next) => {
-  console.log(`🔍 [DEBUG] ${req.method} ${req.originalUrl} - Route matching...`);
-  console.log(`🔍 [DEBUG] Available routes for ${req.method}:`);
-  // Log all registered routes for debugging
-  if (req.app && req.app._router) {
-    const routes = req.app._router.stack
-      .filter(layer => layer.route && Object.keys(layer.route.methods).includes(req.method.toLowerCase()))
-      .map(layer => layer.route.path);
-    console.log(`🔍 [DEBUG] Registered ${req.method} routes:`, routes);
-  }
-  next();
-});
-
-// Class-Subject Management Routes (MUST be defined BEFORE adminRoutes to ensure they're matched)
-// IMPORTANT: These routes must come BEFORE any other /api/admin/classes routes
-// Get subjects for a class
-app.get('/api/admin/classes/:classNumber/subjects', async (req, res) => {
-  console.log('GET /api/admin/classes/:classNumber/subjects - Route hit!');
-  console.log('Request params:', req.params);
-  console.log('Full URL:', req.originalUrl);
-  
-  try {
-    // Get admin ID from JWT token
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const adminId = decoded.userId;
-
-    // Verify admin role
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Decode the classNumber in case it was URL encoded
-    let { classNumber } = req.params;
-    console.log('Raw classNumber from params:', classNumber);
-    if (classNumber) {
-      classNumber = decodeURIComponent(classNumber);
-      console.log('Decoded classNumber:', classNumber);
-    }
-
-    if (!classNumber) {
-      return res.status(400).json({
-        success: false,
-        message: 'Class number is required'
-      });
-    }
-
-    let ClassSubject;
-    try {
-      ClassSubject = (await import('./models/ClassSubject.js')).default;
-    } catch (importError) {
-      console.error('Failed to import ClassSubject model:', importError);
-      throw new Error('ClassSubject model not found');
-    }
-    
-    const classSubject = await ClassSubject.findOne({
-      classNumber,
-      adminId
-    }).populate('subjects', 'name code description board');
-
-    res.json({
-      success: true,
-      data: classSubject || { classNumber, subjects: [] }
-    });
-  } catch (error) {
-    console.error('Get class subjects error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch class subjects'
-    });
-  }
-});
-
-// Save/update class-subject assignments
-// IMPORTANT: This route MUST be defined before app.post('/api/admin/classes', ...) at line 2852
-// Test route to verify routing works
-app.post('/api/admin/test-route', (req, res) => {
-  res.json({ message: 'Test route works!', timestamp: new Date().toISOString() });
-});
-
-app.post('/api/admin/classes/:classNumber/subjects', async (req, res) => {
-  console.log('✅✅✅ POST /api/admin/classes/:classNumber/subjects - Route hit! ✅✅✅');
-  console.log('Request params:', req.params);
-  console.log('Request body:', req.body);
-  console.log('Full URL:', req.originalUrl);
-  console.log('classNumber param:', req.params.classNumber);
-  
-  try {
-    // Get admin ID from JWT token
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    const adminId = decoded.userId;
-
-    // Verify admin role
-    const admin = await User.findById(adminId);
-    if (!admin || admin.role !== 'admin') {
-      return res.status(403).json({ success: false, message: 'Unauthorized' });
-    }
-
-    // Decode the classNumber in case it was URL encoded
-    let { classNumber } = req.params;
-    console.log('Raw classNumber from params:', classNumber);
-    if (classNumber) {
-      classNumber = decodeURIComponent(classNumber);
-      console.log('Decoded classNumber:', classNumber);
-    }
-
-    const { subjectIds } = req.body;
-
-    if (!classNumber) {
-      return res.status(400).json({
-        success: false,
-        message: 'Class number is required'
-      });
-    }
-
-    if (!Array.isArray(subjectIds)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Subject IDs must be an array'
-      });
-    }
-
-    // Verify all subjects exist and belong to the admin's board
-    if (!admin.board) {
-      return res.status(400).json({
-        success: false,
-        message: 'Admin board not found'
-      });
-    }
-
-    const subjects = await Subject.find({
-      _id: { $in: subjectIds },
-      board: admin.board
-    });
-
-    if (subjects.length !== subjectIds.length) {
-      return res.status(400).json({
-        success: false,
-        message: 'Some subjects do not exist or belong to a different board'
-      });
-    }
-
-    // Update or create class-subject assignment
-    let ClassSubject;
-    try {
-      ClassSubject = (await import('./models/ClassSubject.js')).default;
-    } catch (importError) {
-      console.error('Failed to import ClassSubject model:', importError);
-      throw new Error('ClassSubject model not found');
-    }
-    
-    const classSubject = await ClassSubject.findOneAndUpdate(
-      { classNumber, adminId },
-      {
-        classNumber,
-        adminId,
-        subjects: subjectIds
-      },
-      { upsert: true, new: true, runValidators: true }
-    ).populate('subjects', 'name code description board');
-
-    res.json({
-      success: true,
-      message: 'Class subjects saved successfully',
-      data: classSubject
-    });
-  } catch (error) {
-    console.error('Save class subjects error:', error);
-    console.error('Error stack:', error.stack);
-    console.error('Error details:', {
-      name: error.name,
-      message: error.message,
-      code: error.code
-    });
-    res.status(500).json({
-      success: false,
-      message: 'Failed to save class subjects',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 app.use('/api/admin', adminRoutes);
-
 app.use('/api/teacher', teacherRoutes);
+app.use('/api', streamRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/ai', aiRoutes);
 
@@ -1256,23 +968,45 @@ app.post('/api/admin/users', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
-    const { email, password, fullName, role = 'student', isActive = true } = req.body;
+    const { email, password, fullName, classNumber, phone, role = 'student', isActive = true } = req.body;
+    
+    // Validate required fields for students
+    if (role === 'student' && (!fullName || !email || !classNumber)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Full name, email, and class number are required for students' 
+      });
+    }
+    
+    // Get admin to inherit board and school
+    const admin = await User.findById(adminId).select('board schoolName');
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    if (role === 'student' && !admin.board) {
+      return res.status(400).json({ success: false, message: 'Admin must have a board assigned' });
+    }
     
     // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
 
     // Create user and assign to this admin
     const newUser = new User({
       email,
       password: hashedPassword,
       fullName,
+      classNumber: role === 'student' ? classNumber.trim() : undefined,
+      phone: phone || '',
       role,
+      board: role === 'student' ? (admin.board || null) : undefined,
+      schoolName: role === 'student' ? (admin.schoolName || '') : undefined,
       isActive,
       assignedAdmin: adminId  // Assign to the logged-in admin
     });
@@ -1280,16 +1014,38 @@ app.post('/api/admin/users', async (req, res) => {
     await newUser.save();
 
     res.status(201).json({
+      success: true,
       id: newUser._id,
       email: newUser.email,
       fullName: newUser.fullName,
+      classNumber: newUser.classNumber,
+      phone: newUser.phone,
+      board: newUser.board,
+      schoolName: newUser.schoolName,
       role: newUser.role,
       isActive: newUser.isActive,
       assignedAdmin: newUser.assignedAdmin
     });
   } catch (error) {
     console.error('Failed to create user:', error);
-    res.status(500).json({ message: 'Failed to create user' });
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create user';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = `Validation error: ${Object.values(error.errors).map((e) => e.message).join(', ')}`;
+    } else if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      errorMessage = 'A user with this email already exists';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -2918,7 +2674,7 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Classes endpoint - returns classes based on student data
+// Classes endpoint - returns classes from Class model and students
 app.get('/api/admin/classes', async (req, res) => {
   try {
     // Get admin ID from JWT token
@@ -2930,38 +2686,27 @@ app.get('/api/admin/classes', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
-    // Get only students assigned to this admin
+    // Get classes from Class model
+    const Class = (await import('./models/Class.js')).default;
+    const classDocuments = await Class.find({
+      assignedAdmin: adminId,
+      isActive: true
+    }).sort({ classNumber: 1, section: 1 });
+
+    // Get students assigned to this admin
     const students = await User.find({ 
       role: 'student',
       assignedAdmin: adminId 
     }).select('fullName email classNumber phone isActive createdAt lastLogin');
     
-    console.log('Admin classes endpoint - Found students:', students.length);
-    console.log('Students data:', students.map(s => ({ name: s.fullName, class: s.classNumber })));
-    
-    // Group students by class
-    const classMap = new Map();
-    
+    // Create a map of classNumber+section to students
+    const studentClassMap = new Map();
     students.forEach(student => {
       const classKey = student.classNumber || 'Unassigned';
-      if (!classMap.has(classKey)) {
-        classMap.set(classKey, {
-          id: classKey,
-          name: `Class Class-${classKey}`,
-          description: `Students in class ${classKey}`,
-          subject: 'General',
-          grade: classKey,
-          teacher: 'TBD',
-          schedule: 'Mon-Fri 9:00 AM',
-          room: `Room Class-${classKey}`,
-          studentCount: 0,
-          students: [],
-          createdAt: new Date().toISOString()
-        });
+      if (!studentClassMap.has(classKey)) {
+        studentClassMap.set(classKey, []);
       }
-      
-      const classObj = classMap.get(classKey);
-      classObj.students.push({
+      studentClassMap.get(classKey).push({
         id: student._id,
         name: student.fullName,
         email: student.email,
@@ -2971,14 +2716,60 @@ app.get('/api/admin/classes', async (req, res) => {
         createdAt: student.createdAt,
         lastLogin: student.lastLogin
       });
-      classObj.studentCount++;
+    });
+
+    // Format classes with students
+    const classes = classDocuments.map(classDoc => {
+      const fullClassKey = `${classDoc.classNumber}${classDoc.section}`;
+      const classStudents = studentClassMap.get(fullClassKey) || [];
+      
+      return {
+        id: classDoc._id.toString(),
+        name: classDoc.name || `Class ${classDoc.classNumber}${classDoc.section}`,
+        description: classDoc.description || '',
+        classNumber: classDoc.classNumber,
+        section: classDoc.section,
+        subject: 'General',
+        grade: classDoc.classNumber,
+        teacher: 'TBD',
+        schedule: 'Mon-Fri 9:00 AM',
+        room: `Room ${classDoc.classNumber}${classDoc.section}`,
+        studentCount: classStudents.length,
+        students: classStudents,
+        createdAt: classDoc.createdAt
+      };
+    });
+
+    // Also include classes that exist only in student data (for backward compatibility)
+    const classKeysFromStudents = new Set(students.map(s => s.classNumber).filter(Boolean));
+    classKeysFromStudents.forEach(classKey => {
+      // Check if this class already exists in classDocuments
+      const exists = classDocuments.some(c => `${c.classNumber}${c.section}` === classKey);
+      if (!exists && classKey !== 'Unassigned') {
+        const classStudents = studentClassMap.get(classKey) || [];
+        classes.push({
+          id: classKey,
+          name: `Class ${classKey}`,
+          description: `Students in class ${classKey}`,
+          classNumber: classKey,
+          section: '',
+          subject: 'General',
+          grade: classKey,
+          teacher: 'TBD',
+          schedule: 'Mon-Fri 9:00 AM',
+          room: `Room ${classKey}`,
+          studentCount: classStudents.length,
+          students: classStudents,
+          createdAt: new Date().toISOString()
+        });
+      }
     });
     
-    const classes = Array.from(classMap.values());
     console.log('Classes being returned:', classes.map(c => ({ 
       name: c.name, 
-      studentCount: c.studentCount, 
-      students: c.students.length 
+      classNumber: c.classNumber,
+      section: c.section,
+      studentCount: c.studentCount
     })));
     res.json(classes);
   } catch (error) {
@@ -2990,27 +2781,92 @@ app.get('/api/admin/classes', async (req, res) => {
 // Create new class
 app.post('/api/admin/classes', async (req, res) => {
   try {
-    const { name, description, subject, grade, teacher, schedule, room } = req.body;
+    // Get admin ID from JWT token
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+    const adminId = decoded.userId;
+
+    const { classNumber, section, description } = req.body;
     
-    // For now, just return success - in a real app, you'd save to database
-    const newClass = {
-      id: Date.now().toString(),
-      name,
-      description,
-      subject,
-      grade,
-      teacher,
-      schedule,
-      room,
-      studentCount: 0,
-      students: [],
-      createdAt: new Date().toISOString()
-    };
+    // Validate required fields
+    if (!classNumber || !section) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Class number and section are required' 
+      });
+    }
+
+    if (!['A', 'B', 'C'].includes(section)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Section must be A, B, or C' 
+      });
+    }
     
-    res.json(newClass);
+    // Get admin to inherit board and school
+    const admin = await User.findById(adminId).select('board schoolName');
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    if (!admin.board) {
+      return res.status(400).json({ success: false, message: 'Admin must have a board assigned' });
+    }
+
+    // Check if class already exists (classNumber + section + admin)
+    const Class = (await import('./models/Class.js')).default;
+    const existingClass = await Class.findOne({
+      classNumber: classNumber.trim(),
+      section: section,
+      assignedAdmin: adminId
+    });
+
+    if (existingClass) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Class ${classNumber}${section} already exists. Cannot create duplicate classes.` 
+      });
+    }
+
+    // Create full class name
+    const fullClassName = `Class ${classNumber}${section}`;
+    
+    // Create new class
+    const newClass = new Class({
+      classNumber: classNumber.trim(),
+      section: section,
+      name: fullClassName,
+      description: description?.trim() || '',
+      board: admin.board,
+      school: admin.schoolName || '',
+      assignedAdmin: adminId,
+      isActive: true,
+      assignedSubjects: []
+    });
+
+    await newClass.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Class created successfully',
+      data: {
+        id: newClass._id,
+        classNumber: newClass.classNumber,
+        section: newClass.section,
+        name: newClass.name,
+        description: newClass.description,
+        board: newClass.board,
+        school: newClass.school,
+        assignedAdmin: newClass.assignedAdmin
+      }
+    });
   } catch (error) {
     console.error('Failed to create class:', error);
-    res.status(500).json({ message: 'Failed to create class' });
+    res.status(500).json({ success: false, message: 'Failed to create class' });
   }
 });
 
@@ -3694,68 +3550,6 @@ app.get('/api/super-admin/admins', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch admins',
-      error: error.message
-    });
-  }
-});
-
-// Create new admin
-app.post('/api/super-admin/admins', async (req, res) => {
-  try {
-    const { name, email, password } = req.body;
-    
-    // Validate input
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Name, email, and password are required'
-      });
-    }
-
-    // Check if admin already exists
-    const existingAdmin = await User.findOne({ email });
-    if (existingAdmin) {
-      return res.status(400).json({
-        success: false,
-        message: 'Admin with this email already exists'
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create new admin
-    const newAdmin = new User({
-      fullName: name,
-      email: email,
-      password: hashedPassword,
-      role: 'admin',
-      isActive: true
-    });
-
-    await newAdmin.save();
-
-    // Return admin without password
-    const adminResponse = {
-      id: newAdmin._id,
-      name: newAdmin.fullName,
-      email: newAdmin.email,
-      totalStudents: 0,
-      totalTeachers: 0,
-      createdAt: newAdmin.createdAt,
-      status: 'active'
-    };
-
-    res.status(201).json({
-      success: true,
-      data: adminResponse,
-      message: 'Admin created successfully'
-    });
-  } catch (error) {
-    console.error('Error creating admin:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create admin',
       error: error.message
     });
   }
@@ -4527,7 +4321,7 @@ app.post('/api/lesson-plan/generate', async (req, res) => {
       });
     }
 
-    const prompt = `Hello there! I'm your Vidya Tutor from **Asli Learn**. I'm here to help you excel in your IIT JEE Mains preparation. Let's get this detailed lesson plan ready for "${topic}."
+    const prompt = `Hello there! I'm your Vidya AI from **Asli Learn**. I'm here to help you excel in your IIT JEE Mains preparation. Let's get this detailed lesson plan ready for "${topic}."
 
 Create a detailed lesson plan for IIT JEE Mains preparation in ${subject} on the topic "${topic}" for ${gradeLevel} students. The lesson should be ${duration} minutes long.
 
@@ -4568,67 +4362,4 @@ Make it practical, engaging, and focused on JEE Mains preparation. Include speci
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('📋 Registered routes:');
-  // Log all registered POST routes for /api/admin/classes
-  if (app._router && app._router.stack) {
-    const adminClassRoutes = app._router.stack
-      .filter(layer => {
-        if (layer.route) {
-          const path = layer.route.path;
-          const methods = Object.keys(layer.route.methods);
-          return path.includes('/api/admin/classes') && methods.includes('post');
-        }
-        return false;
-      })
-      .map(layer => ({
-        method: 'POST',
-        path: layer.route.path
-      }));
-    console.log('POST routes for /api/admin/classes:', adminClassRoutes);
-    
-    // Log all registered POST routes for /api/super-admin/content
-    const superAdminContentRoutes = app._router.stack
-      .filter(layer => {
-        if (layer.route) {
-          const path = layer.route.path;
-          const methods = Object.keys(layer.route.methods);
-          return path.includes('/api/super-admin/content') && methods.includes('post');
-        }
-        // Also check for router middleware that might contain the routes
-        if (layer.name === 'router' && layer.regexp) {
-          // This is a mounted router, check its routes
-          const router = layer.handle;
-          if (router && router.stack) {
-            const routerRoutes = router.stack
-              .filter(r => r.route && Object.keys(r.route.methods).includes('post'))
-              .map(r => ({
-                method: 'POST',
-                path: layer.regexp.source + r.route.path,
-                fullPath: (layer.regexp.source.replace(/\\/g, '') + r.route.path).replace(/\/\^|\$\/|\?/g, '')
-              }));
-            if (routerRoutes.length > 0) {
-              console.log('Found router with POST routes:', routerRoutes);
-            }
-          }
-        }
-        return false;
-      })
-      .map(layer => ({
-        method: 'POST',
-        path: layer.route.path
-      }));
-    console.log('POST routes for /api/super-admin/content:', superAdminContentRoutes);
-    
-    // Also log all routes in superAdminRoutes router
-    console.log('🔍 Checking superAdminRoutes router...');
-    if (superAdminRoutes && superAdminRoutes.stack) {
-      const allSuperAdminRoutes = superAdminRoutes.stack
-        .filter(layer => layer.route)
-        .map(layer => ({
-          method: Object.keys(layer.route.methods)[0].toUpperCase(),
-          path: layer.route.path
-        }));
-      console.log('All routes in superAdminRoutes:', allSuperAdminRoutes.filter(r => r.path.includes('content')));
-    }
-  }
 });

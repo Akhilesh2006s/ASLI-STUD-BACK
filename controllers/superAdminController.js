@@ -392,25 +392,42 @@ export const createAdmin = async (req, res) => {
   try {
     const { name, email, permissions, board, schoolName } = req.body;
     
-    if (!board || !['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(board)) {
-      return res.status(400).json({ success: false, message: 'Valid board is required' });
+    // Validate required fields
+    if (!name || !email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Name and email are required' 
+      });
     }
     
-    if (!schoolName) {
-      return res.status(400).json({ success: false, message: 'School name is required' });
+    if (!board || !['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(board)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Valid board is required. Must be one of: CBSE_AP, CBSE_TS, STATE_AP, STATE_TS' 
+      });
+    }
+    
+    if (!schoolName || schoolName.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'School name is required' 
+      });
     }
     
     // Check if admin already exists
-    const existingAdmin = await User.findOne({ email });
+    const existingAdmin = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingAdmin) {
-      return res.status(400).json({ success: false, message: 'Admin already exists' });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Admin with this email already exists' 
+      });
     }
     
-    // Create new admin
+    // Create new admin with all details
     const hashedPassword = await bcrypt.hash('admin123', 10); // Default password
     const newAdmin = new User({
-      fullName: name,
-      email,
+      fullName: name.trim(),
+      email: email.toLowerCase().trim(),
       password: hashedPassword,
       role: 'admin',
       board: board.toUpperCase(),
@@ -420,6 +437,15 @@ export const createAdmin = async (req, res) => {
     });
     
     await newAdmin.save();
+    
+    console.log('Admin created successfully:', {
+      id: newAdmin._id,
+      name: newAdmin.fullName,
+      email: newAdmin.email,
+      board: newAdmin.board,
+      schoolName: newAdmin.schoolName,
+      permissions: newAdmin.permissions
+    });
     
     res.json({
       success: true,
@@ -437,7 +463,25 @@ export const createAdmin = async (req, res) => {
     });
   } catch (error) {
     console.error('Create admin error:', error);
-    res.status(500).json({ success: false, message: 'Failed to create admin' });
+    console.error('Create admin error stack:', error.stack);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create admin';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = `Validation error: ${Object.values(error.errors).map((e) => e.message).join(', ')}`;
+    } else if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      errorMessage = 'An admin with this email already exists';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
