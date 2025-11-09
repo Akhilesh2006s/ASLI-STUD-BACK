@@ -151,7 +151,15 @@ app.use(cors({
     }
     
     // Allow new Vercel frontend domain and its preview deployments
-    if (origin && origin.match(/^https:\/\/asli-frontend(-[a-z0-9]+)?\.vercel\.app$/)) {
+    // Matches: asli-frontend.vercel.app, asli-frontend-*.vercel.app, asli-frontend-*-*.vercel.app
+    // This pattern matches all Vercel preview deployment URLs that start with "asli-frontend"
+    if (origin && origin.match(/^https:\/\/asli-frontend(-[a-z0-9]+(-[a-z0-9]+)*)?(-[a-z0-9]+-akhilesh2006s-projects)?\.vercel\.app$/)) {
+      return callback(null, true);
+    }
+    
+    // More flexible pattern: match any subdomain starting with "asli-frontend" ending with ".vercel.app"
+    // This catches all preview deployments including branch previews
+    if (origin && origin.match(/^https:\/\/asli-frontend.*\.vercel\.app$/)) {
       return callback(null, true);
     }
     
