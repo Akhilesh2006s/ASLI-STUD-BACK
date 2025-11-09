@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://asli-stud-back-production.up.railway.app' : 'http://localhost:5173'),
   credentials: true
 }));
 
@@ -236,15 +236,21 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log('🚀 Super Admin Backend Server Started!');
   console.log(`📡 Server running on port ${PORT}`);
-  console.log(`🌐 API Base URL: http://localhost:${PORT}`);
-  console.log(`🔐 Super Admin Login: http://localhost:${PORT}/api/super-admin/login`);
-  console.log(`📊 Dashboard Stats: http://localhost:${PORT}/api/super-admin/stats`);
+  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
+                  process.env.RAILWAY_STATIC_URL || 
+                  `http://localhost:${PORT}`;
+  console.log(`🌐 API Base URL: ${baseUrl}`);
+  console.log(`🔐 Super Admin Login: ${baseUrl}/api/super-admin/login`);
+  console.log(`📊 Dashboard Stats: ${baseUrl}/api/super-admin/stats`);
   console.log('');
   console.log('🔑 Super Admin Credentials:');
   console.log('   Email: Amenity@gmail.com');
   console.log('   Password: Amenity');
   console.log('');
-  console.log('📱 Frontend should connect to: http://localhost:3001');
+  const frontendUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
+                      process.env.RAILWAY_STATIC_URL || 
+                      'http://localhost:3001';
+  console.log(`📱 Frontend should connect to: ${frontendUrl}`);
   console.log('✅ Ready to accept requests!');
 });
 

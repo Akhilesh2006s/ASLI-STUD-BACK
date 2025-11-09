@@ -548,13 +548,20 @@ function generateStreamUrl(streamKey) {
 
 function generatePlaybackUrl(streamKey) {
   // This would integrate with your streaming service (e.g., HLS playback URL)
-  // Example: `https://your-cdn.com/live/${streamKey}.m3u8`
-  return `https://localhost:8080/live/${streamKey}.m3u8`;
+  // Use Railway URL in production, localhost in development
+  const baseUrl = process.env.NODE_ENV === 'production' 
+    ? 'https://asli-stud-back-production.up.railway.app'
+    : 'https://localhost:8080';
+  return `${baseUrl}/live/${streamKey}.m3u8`;
 }
 
 function generateRecordingUrl(streamKey) {
   // This would integrate with your streaming service to get the recording
-  return `https://localhost:8080/recordings/${streamKey}.mp4`;
+  // Use Railway URL in production, localhost in development
+  const baseUrl = process.env.NODE_ENV === 'production' 
+    ? 'https://asli-stud-back-production.up.railway.app'
+    : 'https://localhost:8080';
+  return `${baseUrl}/recordings/${streamKey}.mp4`;
 }
 
 export default router;
