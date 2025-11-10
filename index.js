@@ -612,22 +612,46 @@ app.post('/api/auth/login', async (req, res) => {
     let user = null;
     try {
       user = await User.findOne({ email: email.toLowerCase() });
+      console.log('User lookup result:', user ? {
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+        hasPassword: !!user.password
+      } : 'User not found');
     } catch (userError) {
       console.error('Error querying User model:', userError);
       throw userError; // Re-throw if User query fails
     }
     
     if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      console.log(`Login failed: User with email ${email.toLowerCase()} not found`);
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials',
+        hint: 'User not found in database'
+      });
     }
 
+    console.log('Checking password for user:', user.email);
     const isValidPassword = await bcrypt.compare(password, user.password || '');
+    console.log('Password validation result:', isValidPassword);
+    
     if (!isValidPassword) {
-      return res.status(401).json({ message: 'Invalid credentials' });
+      console.log(`Login failed: Invalid password for user ${user.email}`);
+      return res.status(401).json({ 
+        success: false,
+        message: 'Invalid credentials',
+        hint: 'Password does not match'
+      });
     }
     
     if (!user.isActive) {
-      return res.status(401).json({ message: 'Account is deactivated' });
+      console.log(`Login failed: Account ${user.email} is deactivated`);
+      return res.status(401).json({ 
+        success: false,
+        message: 'Account is deactivated',
+        hint: 'Please contact administrator'
+      });
     }
 
     // Update last login without triggering full document validation (avoids board enum validation)
@@ -1776,6 +1800,65 @@ app.post('/api/debug/create-test-student', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Fix/Create user for login (for Railway debugging)
+app.post('/api/debug/fix-user', async (req, res) => {
+  try {
+    const { email = 'ak@gmail.com', password = 'Password123', fullName = 'Akhilesh', role = 'admin' } = req.body;
+    
+    // Check if user exists
+    let user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      console.log('Creating new user:', email);
+      const hashedPassword = await bcrypt.hash(password, 12);
+      user = new User({
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        fullName: fullName,
+        role: role,
+        isActive: true,
+        board: 'CBSE_AP',
+        schoolName: 'Default School'
+      });
+      await user.save();
+      
+      return res.json({
+        success: true,
+        message: 'User created successfully',
+        user: {
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          password: password
+        }
+      });
+    } else {
+      console.log('Updating existing user:', email);
+      const hashedPassword = await bcrypt.hash(password, 12);
+      user.password = hashedPassword;
+      user.isActive = true;
+      await user.save();
+      
+      return res.json({
+        success: true,
+        message: 'User password updated successfully',
+        user: {
+          email: user.email,
+          fullName: user.fullName,
+          role: user.role,
+          password: password
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Fix user error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
   }
 });
 

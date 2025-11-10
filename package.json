@@ -12,7 +12,8 @@
     "super-admin": "node start-super-admin.js",
     "test-super-admin": "node test-super-admin.js",
     "server": "node server.js",
-    "dev-server": "nodemon server.js"
+    "dev-server": "nodemon server.js",
+    "fix-user": "node fix-user-login.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.2.1",
