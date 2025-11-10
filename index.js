@@ -2693,6 +2693,20 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
     const adminId = decoded.userId;
     console.log('Admin ID for CSV upload:', adminId);
 
+    // Get admin to inherit board and school
+    const admin = await User.findById(adminId).select('board schoolName role');
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ message: 'Admin not found' });
+    }
+
+    if (!admin.board) {
+      return res.status(400).json({ 
+        message: 'Admin must have a board assigned before uploading students. Please update your admin profile first.' 
+      });
+    }
+
+    console.log('Admin board:', admin.board, 'School:', admin.schoolName);
+
     // Convert buffer to string
     const csvData = req.file.buffer.toString('utf8');
     
@@ -2763,7 +2777,9 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
           password: hashedPassword,
           role: 'student',
           isActive: true,
-          assignedAdmin: adminId  // Assign to the logged-in admin
+          assignedAdmin: adminId,  // Assign to the logged-in admin
+          board: admin.board,      // Inherit board from admin
+          schoolName: admin.schoolName || ''  // Inherit school name from admin
         });
 
         await newUser.save();
@@ -2787,7 +2803,12 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
 
   } catch (error) {
     console.error('Failed to upload CSV:', error);
-    res.status(500).json({ message: 'Failed to upload CSV' });
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ 
+      message: 'Failed to upload CSV',
+      error: error.message,
+      hint: error.message.includes('board') ? 'Make sure your admin account has a board assigned' : 'Please check the CSV format and try again'
+    });
   }
 });
 
