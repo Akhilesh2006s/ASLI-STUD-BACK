@@ -563,7 +563,7 @@ export const updateAdmin = async (req, res) => {
   }
 };
 
-// Delete Admin
+// Delete Admin (School) - Cascading deletion
 export const deleteAdmin = async (req, res) => {
   try {
     const adminId = req.params.id;
@@ -571,25 +571,58 @@ export const deleteAdmin = async (req, res) => {
     // Check if admin exists
     const admin = await User.findById(adminId);
     if (!admin || admin.role !== 'admin') {
-      return res.status(404).json({ success: false, message: 'Admin not found' });
+      return res.status(404).json({ success: false, message: 'School not found' });
     }
     
-    // Delete admin and all their data
+    // Import all required models
+    const Teacher = (await import('../models/Teacher.js')).default;
+    const Video = (await import('../models/Video.js')).default;
+    const Assessment = (await import('../models/Assessment.js')).default;
+    const Exam = (await import('../models/Exam.js')).default;
+    const ExamResult = (await import('../models/ExamResult.js')).default;
+    const Question = (await import('../models/Question.js')).default;
+    const Class = (await import('../models/Class.js')).default;
+    const Stream = (await import('../models/Stream.js')).default;
+    
+    // Get all exams created by this admin to delete their results and questions
+    const adminExams = await Exam.find({ adminId: adminId });
+    const examIds = adminExams.map(exam => exam._id);
+    
+    // Delete all related data in parallel
     await Promise.all([
+      // Delete all students assigned to this admin
       User.deleteMany({ assignedAdmin: adminId }),
+      // Delete all teachers assigned to this admin
       Teacher.deleteMany({ adminId }),
+      // Delete all videos created by this admin
       Video.deleteMany({ adminId }),
+      // Delete all assessments created by this admin
       Assessment.deleteMany({ adminId }),
+      // Delete all exams created by this admin
+      Exam.deleteMany({ adminId }),
+      // Delete all exam results for exams created by this admin
+      ExamResult.deleteMany({ adminId }),
+      // Also delete exam results for the specific exams
+      ExamResult.deleteMany({ examId: { $in: examIds } }),
+      // Delete all questions created by this admin
+      Question.deleteMany({ adminId }),
+      // Delete all classes assigned to this admin
+      Class.deleteMany({ assignedAdmin: adminId }),
+      // Delete all streams created by this admin
+      Stream.deleteMany({ adminId }),
+      // Finally, delete the admin itself
       User.findByIdAndDelete(adminId)
     ]);
     
+    console.log(`✅ Successfully deleted school (admin) ${adminId} and all associated data`);
+    
     res.json({
       success: true,
-      message: 'Admin and all associated data deleted successfully'
+      message: 'School and all associated data (students, teachers, exams, results, content) deleted successfully'
     });
   } catch (error) {
-    console.error('Delete admin error:', error);
-    res.status(500).json({ success: false, message: 'Failed to delete admin' });
+    console.error('Delete school error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete school', error: error.message });
   }
 };
 

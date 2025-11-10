@@ -3589,33 +3589,9 @@ app.get('/api/super-admin/admins', async (req, res) => {
   }
 });
 
-// Delete admin
-app.delete('/api/super-admin/admins/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const deletedAdmin = await User.findByIdAndDelete(id);
-
-    if (!deletedAdmin) {
-      return res.status(404).json({
-        success: false,
-        message: 'Admin not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Admin deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting admin:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete admin',
-      error: error.message
-    });
-  }
-});
+// Delete admin - This route is handled by the controller in routes/superAdmin.js
+// Keeping this for backward compatibility but it should use the controller's deleteAdmin function
+// The controller handles cascading deletion of all related data
 
 // Get all users
 app.get('/api/super-admin/users', async (req, res) => {
