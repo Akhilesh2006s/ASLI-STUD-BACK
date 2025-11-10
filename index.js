@@ -2710,14 +2710,42 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
     // Convert buffer to string
     const csvData = req.file.buffer.toString('utf8');
     
-    // Parse CSV data
-    const lines = csvData.split('\n').filter(line => line.trim());
+    // Parse CSV data - handle both \n and \r\n line endings
+    const lines = csvData.split(/\r?\n/).filter(line => line.trim());
     if (lines.length < 2) {
       return res.status(400).json({ message: 'CSV file must have at least a header and one data row' });
     }
 
+    // Helper function to parse CSV line (handles quoted values)
+    const parseCSVLine = (line) => {
+      const result = [];
+      let current = '';
+      let inQuotes = false;
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const nextChar = line[i + 1];
+        
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') {
+            current += '"';
+            i++; // Skip next quote
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          result.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      result.push(current.trim()); // Add last field
+      return result;
+    };
+
     // Get header row
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/^"|"$/g, ''));
     
     // Validate headers - check for both classNumber and classnumber
     const requiredHeaders = ['name', 'email', 'phone'];
@@ -2815,7 +2843,7 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
     // Process each data row
     for (let i = 1; i < lines.length; i++) {
       try {
-        const values = lines[i].split(',').map(v => v.trim());
+        const values = parseCSVLine(lines[i]).map(v => v.trim().replace(/^"|"$/g, ''));
         
         if (values.length !== headers.length) {
           errors.push(`Row ${i + 1}: Column count mismatch`);
