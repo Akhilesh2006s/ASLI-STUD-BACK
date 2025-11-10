@@ -888,6 +888,132 @@ export const getAnalytics = async (req, res) => {
   }
 };
 
+// Student Analytics for Admin Dashboard
+export const getStudentAnalytics = async (req, res) => {
+  try {
+    const adminId = req.adminId;
+    
+    if (!adminId) {
+      return res.status(401).json({ success: false, message: 'Admin ID not found' });
+    }
+
+    // Get all students assigned to this admin
+    const students = await User.find({ 
+      role: 'student', 
+      assignedAdmin: adminId 
+    }).select('fullName email classNumber board');
+
+    // Get all exam results for these students
+    const examResults = await ExamResult.find({ adminId })
+      .populate('userId', 'fullName email classNumber')
+      .populate('examId', 'title subject')
+      .sort({ completedAt: -1 });
+
+    // Class Distribution
+    const classDistribution = {};
+    students.forEach(student => {
+      const className = student.classNumber || 'Unassigned';
+      classDistribution[className] = (classDistribution[className] || 0) + 1;
+    });
+
+    const classDistributionArray = Object.entries(classDistribution).map(([className, count]) => ({
+      className,
+      count
+    })).sort((a, b) => b.count - a.count);
+
+    // Performance Metrics
+    const totalExamsTaken = examResults.length;
+    const totalMarksObtained = examResults.reduce((sum, result) => sum + (result.obtainedMarks || 0), 0);
+    const totalMarksPossible = examResults.reduce((sum, result) => sum + (result.totalMarks || 0), 0);
+    const averageScore = totalMarksPossible > 0 ? ((totalMarksObtained / totalMarksPossible) * 100).toFixed(1) : 0;
+
+    // Top Performers
+    const studentPerformance = {};
+    examResults.forEach(result => {
+      const studentId = result.userId?._id?.toString();
+      if (!studentId) return;
+      
+      if (!studentPerformance[studentId]) {
+        studentPerformance[studentId] = {
+          studentId,
+          studentName: result.userId?.fullName || 'Unknown',
+          studentEmail: result.userId?.email || '',
+          totalExams: 0,
+          totalMarks: 0,
+          totalPossibleMarks: 0
+        };
+      }
+      studentPerformance[studentId].totalExams += 1;
+      studentPerformance[studentId].totalMarks += (result.obtainedMarks || 0);
+      studentPerformance[studentId].totalPossibleMarks += (result.totalMarks || 0);
+    });
+
+    const topPerformers = Object.values(studentPerformance)
+      .map((perf) => ({
+        studentName: perf.studentName,
+        studentEmail: perf.studentEmail,
+        totalExams: perf.totalExams,
+        averageScore: perf.totalPossibleMarks > 0 
+          ? ((perf.totalMarks / perf.totalPossibleMarks) * 100).toFixed(1) 
+          : 0
+      }))
+      .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore))
+      .slice(0, 10);
+
+    // Subject Performance
+    const subjectPerformance = {};
+    examResults.forEach(result => {
+      const subject = result.examId?.subject || result.subject || 'Unknown';
+      if (!subjectPerformance[subject]) {
+        subjectPerformance[subject] = {
+          subject,
+          totalExams: 0,
+          totalMarks: 0,
+          totalPossibleMarks: 0
+        };
+      }
+      subjectPerformance[subject].totalExams += 1;
+      subjectPerformance[subject].totalMarks += (result.obtainedMarks || 0);
+      subjectPerformance[subject].totalPossibleMarks += (result.totalMarks || 0);
+    });
+
+    const subjectPerformanceArray = Object.values(subjectPerformance)
+      .map((subj) => ({
+        subject: subj.subject,
+        averageScore: subj.totalPossibleMarks > 0 
+          ? ((subj.totalMarks / subj.totalPossibleMarks) * 100).toFixed(1) 
+          : 0,
+        totalExams: subj.totalExams
+      }))
+      .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore));
+
+    // Recent Activity (last 5 exam results)
+    const recentActivity = examResults.slice(0, 5).map(result => ({
+      studentName: result.userId?.fullName || 'Unknown',
+      examTitle: result.examId?.title || result.examTitle || 'Unknown',
+      score: result.percentage || 0,
+      completedAt: result.completedAt
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        classDistribution: classDistributionArray,
+        performanceMetrics: {
+          averageScore: parseFloat(averageScore),
+          totalExamsTaken,
+          topPerformers
+        },
+        subjectPerformance: subjectPerformanceArray,
+        recentActivity
+      }
+    });
+  } catch (error) {
+    console.error('Student analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch student analytics' });
+  }
+};
+
 // Exam Management
 export const getExams = async (req, res) => {
   try {
