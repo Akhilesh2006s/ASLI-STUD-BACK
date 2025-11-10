@@ -22,6 +22,7 @@ import User from '../models/User.js';
 import ExamResult from '../models/ExamResult.js';
 import Teacher from '../models/Teacher.js';
 import Content from '../models/Content.js';
+import StudentRemark from '../models/StudentRemark.js';
 
 const router = express.Router();
 
@@ -724,6 +725,161 @@ router.get('/asli-prep-content', async (req, res) => {
     console.error('❌ Error fetching Asli Prep content for teacher:', error);
     console.error('Error stack:', error.stack);
     res.status(500).json({ success: false, message: 'Failed to fetch content', error: error.message });
+  }
+});
+
+// Student Remarks Routes
+// Add remark for a student
+router.post('/students/:studentId/remarks', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { studentId } = req.params;
+    const { remark, subject, isPositive } = req.body;
+
+    if (!remark || remark.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Remark is required' });
+    }
+
+    // Verify student exists and is assigned to this teacher
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Verify teacher exists
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+
+    // Create new remark
+    const newRemark = new StudentRemark({
+      studentId,
+      teacherId,
+      remark: remark.trim(),
+      subject: subject || null,
+      isPositive: isPositive !== undefined ? isPositive : true
+    });
+
+    await newRemark.save();
+
+    // Populate teacher info for response
+    await newRemark.populate('teacherId', 'fullName email');
+    if (subject) {
+      await newRemark.populate('subject', 'name');
+    }
+
+    res.json({
+      success: true,
+      message: 'Remark added successfully',
+      data: newRemark
+    });
+  } catch (error) {
+    console.error('Add student remark error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add remark', error: error.message });
+  }
+});
+
+// Get all remarks for a student
+router.get('/students/:studentId/remarks', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { studentId } = req.params;
+
+    // Verify student exists
+    const student = await User.findById(studentId);
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+
+    // Get all remarks for this student (by any teacher, or filter by current teacher)
+    const remarks = await StudentRemark.find({ studentId })
+      .populate('teacherId', 'fullName email')
+      .populate('subject', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: remarks
+    });
+  } catch (error) {
+    console.error('Get student remarks error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch remarks', error: error.message });
+  }
+});
+
+// Update a remark
+router.put('/remarks/:remarkId', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { remarkId } = req.params;
+    const { remark, isPositive } = req.body;
+
+    if (!remark || remark.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Remark is required' });
+    }
+
+    // Find remark and verify ownership
+    const existingRemark = await StudentRemark.findById(remarkId);
+    if (!existingRemark) {
+      return res.status(404).json({ success: false, message: 'Remark not found' });
+    }
+
+    if (existingRemark.teacherId.toString() !== teacherId) {
+      return res.status(403).json({ success: false, message: 'You can only edit your own remarks' });
+    }
+
+    // Update remark
+    existingRemark.remark = remark.trim();
+    if (isPositive !== undefined) {
+      existingRemark.isPositive = isPositive;
+    }
+    existingRemark.updatedAt = new Date();
+
+    await existingRemark.save();
+
+    // Populate for response
+    await existingRemark.populate('teacherId', 'fullName email');
+    if (existingRemark.subject) {
+      await existingRemark.populate('subject', 'name');
+    }
+
+    res.json({
+      success: true,
+      message: 'Remark updated successfully',
+      data: existingRemark
+    });
+  } catch (error) {
+    console.error('Update student remark error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update remark', error: error.message });
+  }
+});
+
+// Delete a remark
+router.delete('/remarks/:remarkId', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { remarkId } = req.params;
+
+    // Find remark and verify ownership
+    const remark = await StudentRemark.findById(remarkId);
+    if (!remark) {
+      return res.status(404).json({ success: false, message: 'Remark not found' });
+    }
+
+    if (remark.teacherId.toString() !== teacherId) {
+      return res.status(403).json({ success: false, message: 'You can only delete your own remarks' });
+    }
+
+    await StudentRemark.findByIdAndDelete(remarkId);
+
+    res.json({
+      success: true,
+      message: 'Remark deleted successfully'
+    });
+  } catch (error) {
+    console.error('Delete student remark error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete remark', error: error.message });
   }
 });
 

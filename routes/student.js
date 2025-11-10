@@ -8,6 +8,7 @@ import Question from '../models/Question.js';
 import Teacher from '../models/Teacher.js';
 import Subject from '../models/Subject.js';
 import Content from '../models/Content.js';
+import StudentRemark from '../models/StudentRemark.js';
 import { verifyToken } from '../middleware/auth.js';
 import {
   getStudentExamRanking,
@@ -1444,6 +1445,35 @@ router.get('/exam-results', async (req, res) => {
 // Student Ranking Routes
 router.get('/rankings', getAllStudentRankings);
 router.get('/exams/:examId/ranking', getStudentExamRanking);
+
+// Get student's remarks from teachers
+router.get('/remarks', async (req, res) => {
+  try {
+    const studentId = req.userId;
+    
+    if (!studentId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    // Get all remarks for this student
+    const remarks = await StudentRemark.find({ studentId })
+      .populate('teacherId', 'fullName email')
+      .populate('subject', 'name')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: remarks
+    });
+  } catch (error) {
+    console.error('Get student remarks error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch remarks',
+      error: error.message 
+    });
+  }
+});
 
 // Get student's subjects (from assigned class's subjects)
 // Students can ONLY see subjects that have been assigned to their class by the admin
