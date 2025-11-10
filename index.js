@@ -2738,6 +2738,79 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
 
     const createdUsers = [];
     const errors = [];
+    const createdClasses = new Map(); // Track created classes to avoid duplicates
+
+    // Import Class model
+    const Class = (await import('./models/Class.js')).default;
+
+    // Helper function to parse class number and section from CSV
+    const parseClassInfo = (classValue) => {
+      if (!classValue || classValue.trim() === '' || classValue.toLowerCase() === 'unassigned') {
+        return { classNumber: null, section: 'A' };
+      }
+
+      const classStr = classValue.trim();
+      
+      // Try to extract section from formats like "10-A", "10A", "Class 10-A", "Class 10A"
+      const sectionMatch = classStr.match(/[-_]?([ABC])$/i);
+      const section = sectionMatch ? sectionMatch[1].toUpperCase() : 'A';
+      
+      // Extract class number (remove "Class", "Class-", section, etc.)
+      let classNumber = classStr
+        .replace(/^class\s*/i, '')  // Remove "Class" prefix
+        .replace(/[-_]?[ABC]$/i, '')  // Remove section suffix
+        .trim();
+      
+      // If still empty or invalid, use the original value
+      if (!classNumber || classNumber === '') {
+        classNumber = classStr.replace(/[-_]?[ABC]$/i, '').trim();
+      }
+
+      return { classNumber, section };
+    };
+
+    // Helper function to get or create class
+    const getOrCreateClass = async (classNumber, section) => {
+      if (!classNumber || classNumber === 'Unassigned') {
+        return null;
+      }
+
+      const classKey = `${classNumber}-${section}`;
+      
+      // Check if we already created this class in this batch
+      if (createdClasses.has(classKey)) {
+        return createdClasses.get(classKey);
+      }
+
+      // Check if class already exists
+      let classDoc = await Class.findOne({
+        classNumber: classNumber.trim(),
+        section: section,
+        assignedAdmin: adminId
+      });
+
+      if (!classDoc) {
+        // Create new class
+        const fullClassName = `Class ${classNumber}${section}`;
+        classDoc = new Class({
+          classNumber: classNumber.trim(),
+          section: section,
+          name: fullClassName,
+          description: `Auto-created from CSV upload`,
+          board: admin.board,
+          school: admin.schoolName || '',
+          assignedAdmin: adminId,
+          isActive: true,
+          assignedSubjects: []
+        });
+
+        await classDoc.save();
+        console.log(`✅ Created new class: ${fullClassName}`);
+      }
+
+      createdClasses.set(classKey, classDoc);
+      return classDoc;
+    };
 
     // Process each data row
     for (let i = 1; i < lines.length; i++) {
@@ -2765,19 +2838,32 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
         // Hash password
         const hashedPassword = await bcrypt.hash('Password123', 12);
 
-        // Get class number from the class field (handles both classnumber and classNumber)
-        const classNumber = userData.classnumber || 'Unassigned';
+        // Parse class information from CSV
+        const classValue = userData.classnumber || userData.class || '';
+        const { classNumber, section } = parseClassInfo(classValue);
+
+        // Get or create class if class number is provided
+        let assignedClass = null;
+        if (classNumber && classNumber !== 'Unassigned') {
+          try {
+            assignedClass = await getOrCreateClass(classNumber, section);
+          } catch (classError) {
+            errors.push(`Row ${i + 1}: Failed to create class ${classNumber}${section}: ${classError.message}`);
+            // Continue with user creation even if class creation fails
+          }
+        }
 
         // Create new user and assign to the logged-in admin
         const newUser = new User({
           fullName: userData.name,
           email: userData.email,
-          classNumber: classNumber,
+          classNumber: classNumber || 'Unassigned',
           phone: userData.phone,
           password: hashedPassword,
           role: 'student',
           isActive: true,
           assignedAdmin: adminId,  // Assign to the logged-in admin
+          assignedClass: assignedClass ? assignedClass._id : undefined,  // Assign to class if created
           board: admin.board,      // Inherit board from admin
           schoolName: admin.schoolName || ''  // Inherit school name from admin
         });
@@ -2787,7 +2873,8 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
           id: newUser._id,
           name: newUser.fullName,
           email: newUser.email,
-          classNumber: newUser.classNumber
+          classNumber: newUser.classNumber,
+          class: assignedClass ? `${assignedClass.classNumber}${assignedClass.section}` : 'Unassigned'
         });
 
       } catch (error) {
@@ -2795,9 +2882,16 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
       }
     }
 
+    const classesCreated = createdClasses.size;
+    let message = `CSV processed successfully. Created ${createdUsers.length} students.`;
+    if (classesCreated > 0) {
+      message += ` Created ${classesCreated} new class${classesCreated > 1 ? 'es' : ''}.`;
+    }
+
     res.json({
-      message: `CSV processed successfully. Created ${createdUsers.length} users.`,
+      message: message,
       createdUsers,
+      classesCreated: classesCreated,
       errors: errors.length > 0 ? errors : undefined
     });
 
