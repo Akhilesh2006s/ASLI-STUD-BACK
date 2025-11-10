@@ -414,13 +414,20 @@ export const createAdmin = async (req, res) => {
       });
     }
     
-    // Check if admin already exists
+    // Check if admin already exists (including soft-deleted or inactive ones)
     const existingAdmin = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingAdmin) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Admin with this email already exists' 
-      });
+      // If the existing admin is inactive or was deleted, we can remove it first
+      if (!existingAdmin.isActive || existingAdmin.role !== 'admin') {
+        console.log(`Found inactive/deleted admin with email ${email}, removing it first...`);
+        await User.deleteOne({ _id: existingAdmin._id });
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Admin with this email already exists',
+          hint: 'If you deleted this school, please wait a moment and try again'
+        });
+      }
     }
     
     // Create new admin with all details
@@ -574,6 +581,9 @@ export const deleteAdmin = async (req, res) => {
       return res.status(404).json({ success: false, message: 'School not found' });
     }
     
+    const adminEmail = admin.email; // Store email for verification
+    console.log(`🗑️ Starting deletion of school: ${adminEmail} (ID: ${adminId})`);
+    
     // Import all required models
     const Teacher = (await import('../models/Teacher.js')).default;
     const Video = (await import('../models/Video.js')).default;
@@ -589,7 +599,7 @@ export const deleteAdmin = async (req, res) => {
     const examIds = adminExams.map(exam => exam._id);
     
     // Delete all related data in parallel
-    await Promise.all([
+    const deletionResults = await Promise.all([
       // Delete all students assigned to this admin
       User.deleteMany({ assignedAdmin: adminId }),
       // Delete all teachers assigned to this admin
@@ -610,15 +620,32 @@ export const deleteAdmin = async (req, res) => {
       Class.deleteMany({ assignedAdmin: adminId }),
       // Delete all streams created by this admin
       Stream.deleteMany({ adminId }),
-      // Finally, delete the admin itself
-      User.findByIdAndDelete(adminId)
+      // Finally, delete the admin itself - use deleteOne to ensure complete removal
+      User.deleteOne({ _id: adminId })
     ]);
     
-    console.log(`✅ Successfully deleted school (admin) ${adminId} and all associated data`);
+    // Verify the admin was actually deleted
+    const verifyDeletion = await User.findById(adminId);
+    if (verifyDeletion) {
+      console.error(`❌ WARNING: Admin ${adminId} still exists after deletion attempt!`);
+      // Force delete using deleteOne
+      await User.deleteOne({ _id: adminId });
+    }
+    
+    // Also verify by email to ensure no duplicate exists
+    const verifyByEmail = await User.findOne({ email: adminEmail.toLowerCase() });
+    if (verifyByEmail && verifyByEmail._id.toString() === adminId) {
+      console.error(`❌ WARNING: Admin with email ${adminEmail} still exists! Force deleting...`);
+      await User.deleteOne({ email: adminEmail.toLowerCase() });
+    }
+    
+    console.log(`✅ Successfully deleted school (admin) ${adminId} (${adminEmail}) and all associated data`);
+    console.log(`   Deleted: ${deletionResults[0].deletedCount} students, ${deletionResults[1].deletedCount} teachers, ${deletionResults[2].deletedCount} videos`);
     
     res.json({
       success: true,
-      message: 'School and all associated data (students, teachers, exams, results, content) deleted successfully'
+      message: 'School and all associated data (students, teachers, exams, results, content) deleted successfully',
+      deletedEmail: adminEmail // Return email so frontend knows it can be reused
     });
   } catch (error) {
     console.error('Delete school error:', error);
