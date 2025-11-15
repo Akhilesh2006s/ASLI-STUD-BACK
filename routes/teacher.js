@@ -883,4 +883,95 @@ router.delete('/remarks/:remarkId', async (req, res) => {
   }
 });
 
+// Quiz Management Routes
+router.post('/quizzes', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { title, description, subject, duration, difficulty, questions, assignedClasses } = req.body;
+    
+    if (!title || !subject || !questions || !Array.isArray(questions)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Title, subject, and questions are required' 
+      });
+    }
+
+    // Calculate total points
+    const totalPoints = questions.reduce((sum, q) => sum + (q.points || q.marks || 1), 0);
+    
+    const newQuiz = new Assessment({
+      title,
+      description: description || '',
+      questions,
+      subjectIds: [subject],
+      difficulty: difficulty || 'beginner',
+      duration: duration || 60,
+      totalPoints,
+      createdBy: new mongoose.Types.ObjectId(teacherId),
+      adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
+      isPublished: true,
+      assignedClasses: assignedClasses && Array.isArray(assignedClasses) ? assignedClasses : []
+    });
+
+    await newQuiz.save();
+    res.status(201).json({ success: true, data: newQuiz });
+  } catch (error) {
+    console.error('Failed to create quiz:', error);
+    res.status(500).json({ success: false, message: 'Failed to create quiz', error: error.message });
+  }
+});
+
+// Assign quiz to classes
+router.post('/quizzes/:quizId/assign', async (req, res) => {
+  try {
+    const teacherId = req.teacherId;
+    const { quizId } = req.params;
+    const { classIds } = req.body;
+
+    if (!classIds || !Array.isArray(classIds)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Class IDs array is required' 
+      });
+    }
+
+    // Find quiz and verify ownership
+    const quiz = await Assessment.findById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, message: 'Quiz not found' });
+    }
+
+    if (quiz.createdBy && quiz.createdBy.toString() !== teacherId) {
+      return res.status(403).json({ success: false, message: 'You can only assign your own quizzes' });
+    }
+
+    // Verify all class IDs are valid
+    const Class = (await import('../models/Class.js')).default;
+    const classes = await Class.find({ 
+      _id: { $in: classIds },
+      isActive: true
+    });
+
+    if (classes.length !== classIds.length) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'One or more class IDs are invalid' 
+      });
+    }
+
+    // Update quiz with assigned classes
+    quiz.assignedClasses = classIds.map(id => new mongoose.Types.ObjectId(id));
+    await quiz.save();
+
+    res.json({
+      success: true,
+      message: `Quiz assigned to ${classIds.length} class(es) successfully`,
+      data: quiz
+    });
+  } catch (error) {
+    console.error('Failed to assign quiz:', error);
+    res.status(500).json({ success: false, message: 'Failed to assign quiz', error: error.message });
+  }
+});
+
 export default router;

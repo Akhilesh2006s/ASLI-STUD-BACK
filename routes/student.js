@@ -1670,4 +1670,69 @@ router.get('/subjects', async (req, res) => {
   }
 });
 
+// Get assigned quizzes for student
+router.get('/quizzes', async (req, res) => {
+  try {
+    const userId = req.userId;
+    
+    // Get student with assigned class
+    const student = await User.findById(userId)
+      .populate('assignedClass', '_id classNumber section')
+      .select('-password');
+    
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    
+    if (!student.assignedClass) {
+      return res.json({
+        success: true,
+        data: [],
+        message: 'No class assigned. Quizzes will appear here once you are assigned to a class.'
+      });
+    }
+    
+    // Find quizzes assigned to student's class
+    const quizzes = await Assessment.find({
+      assignedClasses: student.assignedClass._id,
+      isPublished: true
+    })
+    .populate('subjectIds', 'name')
+    .populate('createdBy', 'fullName email')
+    .populate('assignedClasses', 'classNumber section')
+    .sort({ createdAt: -1 });
+    
+    // Format quizzes with attempt information
+    const formattedQuizzes = await Promise.all(quizzes.map(async (quiz) => {
+      const attempt = quiz.attempts?.find((a) => 
+        a.user && a.user.toString() === userId
+      );
+      
+      return {
+        _id: quiz._id,
+        title: quiz.title,
+        description: quiz.description,
+        subject: quiz.subjectIds?.[0]?.name || 'Unknown',
+        difficulty: quiz.difficulty,
+        duration: quiz.duration,
+        totalPoints: quiz.totalPoints,
+        questionCount: quiz.questions?.length || 0,
+        createdAt: quiz.createdAt,
+        createdBy: quiz.createdBy,
+        hasAttempted: !!attempt,
+        bestScore: attempt?.score || null,
+        completedAt: attempt?.completedAt || null
+      };
+    }));
+    
+    res.json({
+      success: true,
+      data: formattedQuizzes
+    });
+  } catch (error) {
+    console.error('Get student quizzes error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch quizzes', error: error.message });
+  }
+});
+
 export default router;
