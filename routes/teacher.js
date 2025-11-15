@@ -71,6 +71,144 @@ router.use(extractTeacherId);
 router.get('/dashboard', getTeacherDashboardStats);
 router.get('/test', testTeacherData);
 
+// Get subjects for a specific class (shows teacher's assigned subjects)
+// This route must be defined before other routes that might match
+router.get('/classes/:classNumber/subjects', async (req, res) => {
+  try {
+    const { classNumber } = req.params;
+    // Decode the classNumber in case it was URL encoded
+    const decodedClassNumber = decodeURIComponent(classNumber);
+    const teacherId = req.teacherId;
+    
+    console.log('=== FETCHING SUBJECTS FOR CLASS ===');
+    console.log('Raw classNumber from params:', classNumber);
+    console.log('Decoded classNumber:', decodedClassNumber);
+    console.log('Teacher ID:', teacherId);
+    
+    // Validate classNumber
+    if (!decodedClassNumber || decodedClassNumber.trim() === '' || decodedClassNumber === '-9') {
+      console.error('Invalid classNumber:', decodedClassNumber);
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid class number provided' 
+      });
+    }
+    
+    if (!teacherId) {
+      return res.status(400).json({ success: false, message: 'Teacher ID not found' });
+    }
+    
+    // Get teacher with populated subjects
+    const teacher = await Teacher.findById(teacherId);
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    console.log('Teacher found:', teacher.email);
+    console.log('Teacher subjects (raw):', teacher.subjects);
+    console.log('Teacher subjects length:', teacher.subjects?.length || 0);
+    
+    // Get Class model to verify teacher is assigned to this class
+    const Class = (await import('../models/Class.js')).default;
+    
+    // Find classes with this classNumber that the teacher is assigned to
+    const allClassesWithNumber = await Class.find({
+      classNumber: decodedClassNumber,
+      isActive: true
+    })
+    .select('_id classNumber section');
+    
+    // Filter to only classes the teacher is assigned to
+    const classes = allClassesWithNumber.filter(classDoc => {
+      const classIdStr = classDoc._id.toString();
+      const classNumberStr = classDoc.classNumber;
+      
+      return (teacher.assignedClassIds || []).some(assignedId => {
+        const assignedIdStr = String(assignedId);
+        // Match by ObjectId
+        if (assignedIdStr === classIdStr) {
+          return true;
+        }
+        // Match by classNumber (for backward compatibility)
+        if (assignedIdStr === classNumberStr) {
+          return true;
+        }
+        return false;
+      });
+    });
+    
+    console.log(`Found ${classes.length} classes with classNumber ${decodedClassNumber} assigned to teacher`);
+    
+    if (classes.length === 0) {
+      console.log('No classes found for teacher');
+      return res.json({
+        success: true,
+        subjects: [],
+        message: 'No classes found for this class number'
+      });
+    }
+    
+    // Return teacher's assigned subjects (not class subjects)
+    if (!teacher.subjects || teacher.subjects.length === 0) {
+      console.log('No subjects assigned to teacher');
+      return res.json({
+        success: true,
+        subjects: [],
+        message: 'No subjects assigned to you. Please contact your administrator.'
+      });
+    }
+    
+    // Get Subject model to fetch full details
+    const Subject = (await import('../models/Subject.js')).default;
+    
+    // Extract subject IDs (handle both ObjectId and string formats)
+    const subjectIds = teacher.subjects.map(subj => {
+      if (typeof subj === 'object' && subj._id) {
+        return subj._id;
+      }
+      return subj;
+    });
+    
+    console.log('Subject IDs to fetch:', subjectIds);
+    
+    // Fetch subject details from database
+    const subjects = await Subject.find({
+      _id: { $in: subjectIds },
+      isActive: true
+    })
+    .sort({ name: 1 })
+    .select('_id name description code board');
+    
+    console.log(`Fetched ${subjects.length} subjects assigned to teacher`);
+    subjects.forEach(subj => {
+      console.log(`  - ${subj.name} (${subj._id})`);
+    });
+    
+    if (subjects.length === 0) {
+      console.log('Warning: Subject IDs exist but no active subjects found in database');
+      return res.json({
+        success: true,
+        subjects: [],
+        message: 'No active subjects found. Please contact your administrator.'
+      });
+    }
+    
+    res.json({
+      success: true,
+      subjects: subjects.map(subj => ({
+        _id: subj._id.toString(),
+        name: subj.name,
+        description: subj.description || '',
+        code: subj.code || '',
+        board: subj.board || ''
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching subjects for class:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch subjects', error: error.message });
+  }
+});
+
 // AI Tools Routes
 router.post('/ai/lesson-plan', createLessonPlan);
 router.post('/ai/test-questions', createTestQuestions);
@@ -896,28 +1034,101 @@ router.post('/quizzes', async (req, res) => {
       });
     }
 
+    if (questions.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'At least one question is required' 
+      });
+    }
+
+    // Validate and clean questions
+    const validatedQuestions = questions.map((q, index) => {
+      if (!q.question) {
+        throw new Error(`Question ${index + 1} is missing the 'question' field`);
+      }
+      if (!q.options || !Array.isArray(q.options) || q.options.length === 0) {
+        throw new Error(`Question ${index + 1} is missing valid options`);
+      }
+      if (!q.correctAnswer) {
+        throw new Error(`Question ${index + 1} is missing the 'correctAnswer' field`);
+      }
+      return {
+        question: String(q.question),
+        type: q.type || 'multiple-choice',
+        options: q.options.map(opt => String(opt)),
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation ? String(q.explanation) : '',
+        points: Number(q.points) || 1
+      };
+    });
+
     // Calculate total points
-    const totalPoints = questions.reduce((sum, q) => sum + (q.points || q.marks || 1), 0);
+    const totalPoints = validatedQuestions.reduce((sum, q) => sum + (q.points || 1), 0);
     
+    // Map difficulty values to match Assessment model enum
+    const difficultyMap = {
+      'easy': 'beginner',
+      'medium': 'intermediate',
+      'hard': 'advanced',
+      'beginner': 'beginner',
+      'intermediate': 'intermediate',
+      'advanced': 'advanced'
+    };
+    const mappedDifficulty = difficultyMap[difficulty?.toLowerCase()] || 'beginner';
+    
+    // Convert assignedClasses to ObjectIds if they're strings
+    let assignedClassesIds = [];
+    if (assignedClasses && Array.isArray(assignedClasses)) {
+      assignedClassesIds = assignedClasses.map(classId => {
+        if (mongoose.Types.ObjectId.isValid(classId)) {
+          return new mongoose.Types.ObjectId(classId);
+        }
+        return classId;
+      });
+    }
+
     const newQuiz = new Assessment({
       title,
       description: description || '',
-      questions,
-      subjectIds: [subject],
-      difficulty: difficulty || 'beginner',
+      questions: validatedQuestions,
+      subjectIds: [String(subject)], // Ensure subject is a string
+      difficulty: mappedDifficulty,
       duration: duration || 60,
       totalPoints,
       createdBy: new mongoose.Types.ObjectId(teacherId),
       adminId: req.adminId ? new mongoose.Types.ObjectId(req.adminId) : new mongoose.Types.ObjectId(teacherId),
       isPublished: true,
-      assignedClasses: assignedClasses && Array.isArray(assignedClasses) ? assignedClasses : []
+      assignedClasses: assignedClassesIds
+    });
+    
+    console.log('Creating quiz with:', {
+      title,
+      subjectIds: [String(subject)],
+      questionsCount: validatedQuestions.length,
+      assignedClassesCount: assignedClassesIds.length,
+      firstQuestion: validatedQuestions[0] ? {
+        question: validatedQuestions[0].question.substring(0, 50),
+        optionsCount: validatedQuestions[0].options.length,
+        hasCorrectAnswer: !!validatedQuestions[0].correctAnswer
+      } : null
     });
 
     await newQuiz.save();
     res.status(201).json({ success: true, data: newQuiz });
   } catch (error) {
     console.error('Failed to create quiz:', error);
-    res.status(500).json({ success: false, message: 'Failed to create quiz', error: error.message });
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      body: req.body
+    });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to create quiz', 
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 

@@ -1735,4 +1735,101 @@ router.get('/quizzes', async (req, res) => {
   }
 });
 
+// Get specific quiz by ID for student
+router.get('/quizzes/:quizId', async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const userId = req.userId;
+    
+    // Get student with assigned class
+    const student = await User.findById(userId)
+      .populate('assignedClass', '_id classNumber section')
+      .select('-password');
+    
+    if (!student || student.role !== 'student') {
+      return res.status(404).json({ success: false, message: 'Student not found' });
+    }
+    
+    if (!student.assignedClass) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'No class assigned. Please contact your administrator.' 
+      });
+    }
+    
+    // Find quiz assigned to student's class
+    const quiz = await Assessment.findOne({
+      _id: quizId,
+      assignedClasses: student.assignedClass._id,
+      isPublished: true
+    })
+    .populate('subjectIds', 'name')
+    .populate('createdBy', 'fullName email')
+    .select('-attempts'); // Don't send attempts to prevent cheating
+    
+    if (!quiz) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Quiz not found or you do not have access to it' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: quiz
+    });
+  } catch (error) {
+    console.error('Get quiz by ID error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch quiz' });
+  }
+});
+
+// Submit quiz attempt
+router.post('/quizzes/:quizId/submit', async (req, res) => {
+  try {
+    const { quizId } = req.params;
+    const { answers, score, timeTaken } = req.body;
+    const userId = req.userId;
+    
+    const quiz = await Assessment.findById(quizId);
+    if (!quiz) {
+      return res.status(404).json({ success: false, message: 'Quiz not found' });
+    }
+    
+    // Remove existing attempt if any
+    if (quiz.attempts) {
+      quiz.attempts = quiz.attempts.filter(
+        (attempt) => {
+          const attemptUserId = attempt.user ? (attempt.user.toString ? attempt.user.toString() : String(attempt.user)) : null;
+          return attemptUserId !== userId;
+        }
+      );
+    } else {
+      quiz.attempts = [];
+    }
+    
+    // Add new attempt
+    quiz.attempts.push({
+      user: userId,
+      score: score,
+      answers: answers,
+      completedAt: new Date()
+    });
+    
+    await quiz.save();
+    
+    res.json({
+      success: true,
+      message: 'Quiz submitted successfully',
+      data: {
+        score,
+        totalPoints: quiz.totalPoints
+      }
+    });
+  } catch (error) {
+    console.error('Submit quiz error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit quiz' });
+  }
+});
+
 export default router;

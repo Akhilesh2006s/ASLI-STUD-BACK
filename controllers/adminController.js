@@ -1358,7 +1358,7 @@ export const getTeacherDashboardStats = async (req, res) => {
         ],
         isActive: true
       })
-      .populate('assignedSubjects', '_id name')
+      .populate('assignedSubjects', '_id name description code board')
       .select('_id classNumber section description assignedSubjects');
 
       const classObjectIds = classDocuments.map(c => c._id);
@@ -1437,12 +1437,24 @@ export const getTeacherDashboardStats = async (req, res) => {
           // Build class name from classNumber and section (e.g., "10C")
           const className = `${classDoc.classNumber}${classDoc.section || ''}`;
           
+          // Format assignedSubjects for frontend
+          const assignedSubjects = classDoc.assignedSubjects 
+            ? classDoc.assignedSubjects.map(subj => ({
+                _id: subj._id ? subj._id.toString() : subj.toString(),
+                name: subj.name || 'Unknown Subject',
+                description: subj.description || '',
+                code: subj.code || '',
+                board: subj.board || ''
+              }))
+            : [];
+          
           return {
             id: classDoc._id.toString(),
             name: className,
             classNumber: classDoc.classNumber,
             section: classDoc.section,
             description: classDoc.description || '',
+            assignedSubjects: assignedSubjects,
             subject: classDoc.assignedSubjects && classDoc.assignedSubjects.length > 0 
               ? classDoc.assignedSubjects[0].name 
               : (teacher.subjects && teacher.subjects.length > 0 ? teacher.subjects[0].name : 'General'),

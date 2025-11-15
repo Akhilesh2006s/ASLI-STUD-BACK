@@ -81,9 +81,15 @@ export const createTestQuestions = async (req, res) => {
     });
   } catch (error) {
     console.error('Create test questions error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
     res.status(500).json({ 
       success: false, 
-      message: 'Failed to generate test questions' 
+      message: error.message || 'Failed to generate test questions',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

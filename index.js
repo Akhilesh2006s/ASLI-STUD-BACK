@@ -2387,17 +2387,18 @@ app.get('/api/student/content', async (req, res) => {
 //   }
 // });
 
-app.get('/api/student/quizzes', async (req, res) => {
-  try {
-    const quizzes = await Assessment.find({ isPublished: true })
-      .populate('createdBy', 'fullName')
-      .sort({ createdAt: -1 });
-    res.json(quizzes);
-  } catch (error) {
-    console.error('Failed to fetch student quizzes:', error);
-    res.status(500).json({ message: 'Failed to fetch quizzes' });
-  }
-});
+// This route is now handled by studentRoutes in routes/student.js
+// app.get('/api/student/quizzes', async (req, res) => {
+//   try {
+//     const quizzes = await Assessment.find({ isPublished: true })
+//       .populate('createdBy', 'fullName')
+//       .sort({ createdAt: -1 });
+//     res.json(quizzes);
+//   } catch (error) {
+//     console.error('Failed to fetch student quizzes:', error);
+//     res.status(500).json({ message: 'Failed to fetch quizzes' });
+//   }
+// });
 
 // Question management endpoints
 app.get('/api/admin/exams/:examId/questions', requireAuth, requireAdmin, async (req, res) => {
