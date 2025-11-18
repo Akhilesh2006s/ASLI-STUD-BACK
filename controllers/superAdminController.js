@@ -1,0 +1,1158 @@
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import Video from '../models/Video.js';
+import Teacher from '../models/Teacher.js';
+import Assessment from '../models/Assessment.js';
+import Exam from '../models/Exam.js';
+import ExamResult from '../models/ExamResult.js';
+
+// Get JWT secret - require it from environment
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('❌ JWT_SECRET environment variable is required');
+  process.exit(1);
+}
+
+// Super Admin Login
+export const superAdminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Email and password are required' 
+      });
+    }
+    
+    // Check for Super Admin in database
+    const superAdminUser = await User.findOne({ 
+      email: email.toLowerCase().trim(),
+      role: 'super-admin',
+      isActive: true
+    });
+    
+    if (superAdminUser) {
+      const isPasswordValid = await bcrypt.compare(password, superAdminUser.password);
+      if (isPasswordValid) {
+        const token = jwt.sign(
+          { 
+            id: superAdminUser._id.toString(),
+            email: superAdminUser.email,
+            fullName: superAdminUser.fullName,
+            role: 'super-admin'
+          },
+          JWT_SECRET,
+          { expiresIn: '24h' }
+        );
+        
+        await User.findByIdAndUpdate(superAdminUser._id, { lastLogin: new Date() });
+        
+        return res.json({
+          success: true,
+          token,
+          user: {
+            id: superAdminUser._id.toString(),
+            email: superAdminUser.email,
+            fullName: superAdminUser.fullName,
+            role: 'super-admin'
+          }
+        });
+      }
+    }
+    
+    // Fallback: Check environment variables for super admin (for initial setup)
+    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
+    const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD;
+    
+    if (SUPER_ADMIN_EMAIL && SUPER_ADMIN_PASSWORD && 
+        email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() && 
+        password === SUPER_ADMIN_PASSWORD) {
+      // Create super admin user in database if it doesn't exist
+      let superAdmin = await User.findOne({ role: 'super-admin' });
+      if (!superAdmin) {
+        const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 12);
+        superAdmin = new User({
+          email: SUPER_ADMIN_EMAIL.toLowerCase().trim(),
+          password: hashedPassword,
+          fullName: 'Super Admin',
+          role: 'super-admin',
+          isActive: true
+        });
+        await superAdmin.save();
+      }
+      
+      const token = jwt.sign(
+        { 
+          id: superAdmin._id.toString(),
+          email: superAdmin.email,
+          fullName: superAdmin.fullName,
+          role: 'super-admin'
+        },
+        JWT_SECRET,
+        { expiresIn: '24h' }
+      );
+      
+      await User.findByIdAndUpdate(superAdmin._id, { lastLogin: new Date() });
+      
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: superAdmin._id.toString(),
+          email: superAdmin.email,
+          fullName: superAdmin.fullName,
+          role: 'super-admin'
+        }
+      });
+    }
+    
+    res.status(401).json({ success: false, message: 'Invalid credentials' });
+  } catch (error) {
+    console.error('Super admin login error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+// Get Dashboard Stats (Global view for Super Admin)
+export const getDashboardStats = async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalTeachers = await Teacher.countDocuments();
+    const totalVideos = await Video.countDocuments();
+    const totalAssessments = await Assessment.countDocuments();
+    const totalExams = await Exam.countDocuments();
+    const totalAdmins = await User.countDocuments({ role: 'admin' });
+    
+    // Calculate meaningful metrics instead of mock revenue
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalExamResults = await ExamResult.countDocuments();
+    const activeVideos = await Video.countDocuments({ isActive: true });
+    const activeAssessments = await Assessment.countDocuments({ isActive: true });
+    
+    // Calculate engagement metrics
+    const avgExamsPerStudent = totalStudents > 0 ? (totalExamResults / totalStudents).toFixed(1) : 0;
+    const contentEngagement = totalVideos + totalAssessments + totalExams;
+    
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        totalStudents,
+        totalTeachers,
+        totalAdmins,
+        courses: totalVideos,
+        assessments: totalAssessments,
+        exams: totalExams,
+        examResults: totalExamResults,
+        activeVideos,
+        activeAssessments,
+        avgExamsPerStudent,
+        contentEngagement,
+        superAdmins: 1
+      }
+    });
+  } catch (error) {
+    console.error('Stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+};
+
+// Get All Admins with comprehensive analytics
+export const getAllAdmins = async (req, res) => {
+  try {
+    const admins = await User.find({ role: 'admin' }).select('-password');
+    
+    // Get comprehensive analytics for each admin
+    const adminsWithAnalytics = await Promise.all(
+      admins.map(async (admin) => {
+        const [
+          studentCount, 
+          teacherCount, 
+          videoCount, 
+          assessmentCount, 
+          examCount,
+          examResults
+        ] = await Promise.all([
+          User.countDocuments({ role: 'student', assignedAdmin: admin._id }).catch(() => 0),
+          Teacher.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Video.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Assessment.countDocuments({ adminId: admin._id }).catch(() => 0),
+          Exam.countDocuments({ adminId: admin._id }).catch(() => 0),
+          ExamResult.find({ adminId: admin._id }).populate('userId', 'fullName email').catch(() => [])
+        ]);
+        
+        // Calculate exam performance analytics
+        const totalExamsTaken = examResults.length;
+        const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + (result.totalQuestions || 0), 0);
+        const totalCorrectAnswers = examResults.reduce((sum, result) => sum + (result.correctAnswers || 0), 0);
+        const totalMarksObtained = examResults.reduce((sum, result) => sum + (result.obtainedMarks || 0), 0);
+        const totalMarksPossible = examResults.reduce((sum, result) => sum + (result.totalMarks || 0), 0);
+        
+        const averageScore = totalMarksPossible > 0 ? (totalMarksObtained / totalMarksPossible * 100).toFixed(1) : 0;
+        const averageAccuracy = totalQuestionsAnswered > 0 ? (totalCorrectAnswers / totalQuestionsAnswered * 100).toFixed(1) : 0;
+        
+        // Get top performing students
+        const studentPerformance = examResults.reduce((acc, result) => {
+          if (!result.userId || !result.userId._id) return acc;
+          const studentId = result.userId._id.toString();
+          if (!acc[studentId]) {
+            acc[studentId] = {
+              studentName: result.userId.fullName || 'Unknown',
+              studentEmail: result.userId.email || 'unknown@email.com',
+              totalExams: 0,
+              totalMarks: 0,
+              totalPossibleMarks: 0,
+              averageScore: 0
+            };
+          }
+          acc[studentId].totalExams += 1;
+          acc[studentId].totalMarks += (result.obtainedMarks || 0);
+          acc[studentId].totalPossibleMarks += (result.totalMarks || 0);
+          return acc;
+        }, {});
+        
+        // Calculate average scores for each student
+        Object.values(studentPerformance).forEach(student => {
+          student.averageScore = student.totalPossibleMarks > 0 
+            ? (student.totalMarks / student.totalPossibleMarks * 100).toFixed(1)
+            : 0;
+        });
+        
+        // Sort students by performance
+        const topStudents = Object.values(studentPerformance)
+          .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore))
+          .slice(0, 5);
+        
+        // Get recent exam results
+        const recentResults = examResults
+          .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
+          .slice(0, 10)
+          .map(result => ({
+            examTitle: result.examTitle || 'Unknown Exam',
+            studentName: result.userId?.fullName || 'Unknown Student',
+            score: result.percentage || 0,
+            marks: `${result.obtainedMarks || 0}/${result.totalMarks || 0}`,
+            completedAt: result.completedAt || new Date()
+          }));
+        
+        // Calculate subject-wise performance
+        const subjectPerformance = {};
+        examResults.forEach(result => {
+          if (result.subjectWiseScore) {
+            Object.entries(result.subjectWiseScore).forEach(([subject, data]) => {
+              if (!subjectPerformance[subject]) {
+                subjectPerformance[subject] = {
+                  totalQuestions: 0,
+                  correctAnswers: 0,
+                  totalMarks: 0,
+                  obtainedMarks: 0
+                };
+              }
+              subjectPerformance[subject].totalQuestions += data.total;
+              subjectPerformance[subject].correctAnswers += data.correct;
+              subjectPerformance[subject].totalMarks += data.marks;
+              subjectPerformance[subject].obtainedMarks += data.marks;
+            });
+          }
+        });
+        
+        // Calculate subject-wise averages
+        const subjectAnalytics = Object.entries(subjectPerformance).map(([subject, data]) => ({
+          subject,
+          accuracy: data.totalQuestions > 0 ? (data.correctAnswers / data.totalQuestions * 100).toFixed(1) : 0,
+          averageScore: data.totalMarks > 0 ? (data.obtainedMarks / data.totalMarks * 100).toFixed(1) : 0,
+          totalQuestions: data.totalQuestions,
+          correctAnswers: data.correctAnswers
+        }));
+        
+        return {
+          id: admin._id,
+          name: admin.fullName,
+          email: admin.email,
+          permissions: admin.permissions || [],
+          status: admin.isActive ? 'Active' : 'Inactive',
+          joinDate: admin.createdAt,
+          stats: {
+            students: studentCount,
+            teachers: teacherCount,
+            videos: videoCount,
+            assessments: assessmentCount,
+            exams: examCount,
+            totalExamsTaken: totalExamsTaken,
+            averageScore: averageScore,
+            averageAccuracy: averageAccuracy
+          },
+          analytics: {
+            topStudents: topStudents,
+            recentResults: recentResults,
+            subjectPerformance: subjectAnalytics,
+            totalQuestionsAnswered: totalQuestionsAnswered,
+            totalCorrectAnswers: totalCorrectAnswers,
+            totalMarksObtained: totalMarksObtained,
+            totalMarksPossible: totalMarksPossible
+          }
+        };
+      })
+    );
+    
+    res.json({
+      success: true,
+      data: adminsWithAnalytics
+    });
+  } catch (error) {
+    console.error('Get admins analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch admin analytics' });
+  }
+};
+
+// Get detailed analytics for a specific admin
+export const getAdminAnalytics = async (req, res) => {
+  try {
+    const { adminId } = req.params;
+    
+    // Verify admin exists
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+    
+    // Get all exam results for this admin
+    const examResults = await ExamResult.find({ adminId })
+      .populate('userId', 'fullName email')
+      .populate('examId', 'title subject')
+      .sort({ completedAt: -1 });
+    
+    // Get all students assigned to this admin
+    const students = await User.find({ role: 'student', assignedAdmin: adminId })
+      .select('fullName email createdAt');
+    
+    // Get all teachers for this admin
+    const teachers = await Teacher.find({ adminId })
+      .select('fullName email department subjects createdAt');
+    
+    // Calculate comprehensive analytics
+    const totalExamsTaken = examResults.length;
+    const totalStudents = students.length;
+    const totalTeachers = teachers.length;
+    
+    // Performance metrics
+    const totalQuestionsAnswered = examResults.reduce((sum, result) => sum + result.totalQuestions, 0);
+    const totalCorrectAnswers = examResults.reduce((sum, result) => sum + result.correctAnswers, 0);
+    const totalMarksObtained = examResults.reduce((sum, result) => sum + result.obtainedMarks, 0);
+    const totalMarksPossible = examResults.reduce((sum, result) => sum + result.totalMarks, 0);
+    
+    const averageScore = totalMarksPossible > 0 ? (totalMarksObtained / totalMarksPossible * 100).toFixed(1) : 0;
+    const averageAccuracy = totalQuestionsAnswered > 0 ? (totalCorrectAnswers / totalQuestionsAnswered * 100).toFixed(1) : 0;
+    
+    // Student performance analysis
+    const studentPerformance = {};
+    examResults.forEach(result => {
+      const studentId = result.userId._id.toString();
+      if (!studentPerformance[studentId]) {
+        studentPerformance[studentId] = {
+          studentName: result.userId.fullName,
+          studentEmail: result.userId.email,
+          totalExams: 0,
+          totalMarks: 0,
+          totalPossibleMarks: 0,
+          examHistory: []
+        };
+      }
+      studentPerformance[studentId].totalExams += 1;
+      studentPerformance[studentId].totalMarks += result.obtainedMarks;
+      studentPerformance[studentId].totalPossibleMarks += result.totalMarks;
+      studentPerformance[studentId].examHistory.push({
+        examTitle: result.examTitle,
+        score: result.percentage,
+        marks: `${result.obtainedMarks}/${result.totalMarks}`,
+        completedAt: result.completedAt
+      });
+    });
+    
+    // Calculate average scores for each student
+    Object.values(studentPerformance).forEach(student => {
+      student.averageScore = student.totalPossibleMarks > 0 
+        ? (student.totalMarks / student.totalPossibleMarks * 100).toFixed(1)
+        : 0;
+    });
+    
+    // Sort students by performance
+    const topPerformers = Object.values(studentPerformance)
+      .sort((a, b) => parseFloat(b.averageScore) - parseFloat(a.averageScore))
+      .slice(0, 10);
+    
+    // Subject-wise analysis
+    const subjectAnalysis = {};
+    examResults.forEach(result => {
+      if (result.subjectWiseScore) {
+        Object.entries(result.subjectWiseScore).forEach(([subject, data]) => {
+          if (!subjectAnalysis[subject]) {
+            subjectAnalysis[subject] = {
+              totalQuestions: 0,
+              correctAnswers: 0,
+              totalMarks: 0,
+              obtainedMarks: 0,
+              examCount: 0
+            };
+          }
+          subjectAnalysis[subject].totalQuestions += data.total;
+          subjectAnalysis[subject].correctAnswers += data.correct;
+          subjectAnalysis[subject].totalMarks += data.marks;
+          subjectAnalysis[subject].obtainedMarks += data.marks;
+          subjectAnalysis[subject].examCount += 1;
+        });
+      }
+    });
+    
+    // Calculate subject-wise averages
+    const subjectAnalytics = Object.entries(subjectAnalysis).map(([subject, data]) => ({
+      subject,
+      accuracy: data.totalQuestions > 0 ? (data.correctAnswers / data.totalQuestions * 100).toFixed(1) : 0,
+      averageScore: data.totalMarks > 0 ? (data.obtainedMarks / data.totalMarks * 100).toFixed(1) : 0,
+      totalQuestions: data.totalQuestions,
+      correctAnswers: data.correctAnswers,
+      examCount: data.examCount
+    }));
+    
+    // Recent activity
+    const recentActivity = examResults.slice(0, 20).map(result => ({
+      type: 'exam_completed',
+      studentName: result.userId.fullName,
+      examTitle: result.examTitle,
+      score: result.percentage,
+      completedAt: result.completedAt
+    }));
+    
+    res.json({
+      success: true,
+      data: {
+        admin: {
+          id: admin._id,
+          name: admin.fullName,
+          email: admin.email,
+          joinDate: admin.createdAt
+        },
+        overview: {
+          totalStudents,
+          totalTeachers,
+          totalExamsTaken,
+          averageScore,
+          averageAccuracy,
+          totalQuestionsAnswered,
+          totalCorrectAnswers,
+          totalMarksObtained,
+          totalMarksPossible
+        },
+        topPerformers,
+        subjectAnalytics,
+        recentActivity,
+        allStudents: students,
+        allTeachers: teachers
+      }
+    });
+  } catch (error) {
+    console.error('Get admin analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch admin analytics' });
+  }
+};
+
+// Create New Admin
+export const createAdmin = async (req, res) => {
+  try {
+    const { name, email, permissions, board, schoolName } = req.body;
+    
+    // Validate required fields
+    if (!name || !email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Name and email are required' 
+      });
+    }
+    
+    if (!board || !['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(board)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Valid board is required. Must be one of: CBSE_AP, CBSE_TS, STATE_AP, STATE_TS' 
+      });
+    }
+    
+    if (!schoolName || schoolName.trim() === '') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'School name is required' 
+      });
+    }
+    
+    // Check if admin already exists (including soft-deleted or inactive ones)
+    const existingAdmin = await User.findOne({ email: email.toLowerCase().trim() });
+    if (existingAdmin) {
+      // If the existing admin is inactive or was deleted, we can remove it first
+      if (!existingAdmin.isActive || existingAdmin.role !== 'admin') {
+        console.log(`Found inactive/deleted admin with email ${email}, removing it first...`);
+        await User.deleteOne({ _id: existingAdmin._id });
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Admin with this email already exists',
+          hint: 'If you deleted this school, please wait a moment and try again'
+        });
+      }
+    }
+    
+    // Create new admin with all details
+    const hashedPassword = await bcrypt.hash('admin123', 10); // Default password
+    const newAdmin = new User({
+      fullName: name.trim(),
+      email: email.toLowerCase().trim(),
+      password: hashedPassword,
+      role: 'admin',
+      board: board.toUpperCase(),
+      schoolName: schoolName.trim(),
+      permissions: permissions || [],
+      isActive: true
+    });
+    
+    await newAdmin.save();
+    
+    console.log('Admin created successfully:', {
+      id: newAdmin._id,
+      name: newAdmin.fullName,
+      email: newAdmin.email,
+      board: newAdmin.board,
+      schoolName: newAdmin.schoolName,
+      permissions: newAdmin.permissions
+    });
+    
+    res.json({
+      success: true,
+      message: 'Admin created successfully',
+      data: {
+        id: newAdmin._id,
+        name: newAdmin.fullName,
+        email: newAdmin.email,
+        board: newAdmin.board,
+        schoolName: newAdmin.schoolName,
+        permissions: newAdmin.permissions,
+        status: 'Active',
+        joinDate: newAdmin.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create admin error:', error);
+    console.error('Create admin error stack:', error.stack);
+    
+    // Provide more specific error messages
+    let errorMessage = 'Failed to create admin';
+    
+    if (error.name === 'ValidationError') {
+      errorMessage = `Validation error: ${Object.values(error.errors).map((e) => e.message).join(', ')}`;
+    } else if (error.code === 11000) {
+      // Duplicate key error (MongoDB)
+      errorMessage = 'An admin with this email already exists';
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Update Admin
+export const updateAdmin = async (req, res) => {
+  try {
+    const { name, email, permissions, isActive, board, schoolName } = req.body;
+    const adminId = req.params.id;
+    
+    console.log('📝 Updating admin:', adminId, { name, email, board, schoolName, isActive });
+    
+    // Check if admin exists
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      console.error('Admin not found:', adminId);
+      return res.status(404).json({ success: false, message: 'Admin not found' });
+    }
+
+    // Prepare update object
+    const updateData = {};
+    if (name !== undefined && name !== null && name.trim() !== '') {
+      updateData.fullName = name.trim();
+    }
+    if (email !== undefined && email !== null && email.trim() !== '') {
+      const emailLower = email.toLowerCase().trim();
+      // Check if email is being changed and if it's already taken
+      if (emailLower !== admin.email.toLowerCase()) {
+        const existingUser = await User.findOne({ email: emailLower });
+        if (existingUser && existingUser._id.toString() !== adminId) {
+          return res.status(400).json({ success: false, message: 'Email already exists' });
+        }
+        updateData.email = emailLower;
+      }
+    }
+    if (permissions !== undefined) updateData.permissions = permissions;
+    if (isActive !== undefined) updateData.isActive = Boolean(isActive);
+    if (board !== undefined && board !== null && board !== '') {
+      const boardUpper = board.toUpperCase();
+      if (!['CBSE_AP', 'CBSE_TS', 'STATE_AP', 'STATE_TS'].includes(boardUpper)) {
+        return res.status(400).json({ success: false, message: `Invalid board code: ${board}. Must be one of: CBSE_AP, CBSE_TS, STATE_AP, STATE_TS` });
+      }
+      updateData.board = boardUpper;
+    }
+    if (schoolName !== undefined && schoolName !== null) {
+      updateData.schoolName = schoolName.trim();
+    }
+
+    console.log('Update data:', updateData);
+
+    const updatedAdmin = await User.findByIdAndUpdate(
+      adminId,
+      updateData,
+      { new: true, runValidators: false } // Using runValidators: false to avoid board enum issues
+    );
+    
+    if (!updatedAdmin) {
+      return res.status(500).json({ success: false, message: 'Failed to update admin' });
+    }
+
+    console.log('✅ Admin updated successfully:', updatedAdmin.email, updatedAdmin.board);
+    
+    res.json({
+      success: true,
+      message: 'Admin updated successfully',
+      data: {
+        id: updatedAdmin._id,
+        name: updatedAdmin.fullName,
+        email: updatedAdmin.email,
+        board: updatedAdmin.board,
+        schoolName: updatedAdmin.schoolName,
+        permissions: updatedAdmin.permissions,
+        status: updatedAdmin.isActive ? 'Active' : 'Inactive'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Update admin error:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({ success: false, message: 'Failed to update admin', error: error.message });
+  }
+};
+
+// Delete Admin (School) - Cascading deletion
+export const deleteAdmin = async (req, res) => {
+  try {
+    const adminId = req.params.id;
+    
+    // Check if admin exists
+    const admin = await User.findById(adminId);
+    if (!admin || admin.role !== 'admin') {
+      return res.status(404).json({ success: false, message: 'School not found' });
+    }
+    
+    const adminEmail = admin.email; // Store email for verification
+    console.log(`🗑️ Starting deletion of school: ${adminEmail} (ID: ${adminId})`);
+    
+    // Import all required models
+    const Teacher = (await import('../models/Teacher.js')).default;
+    const Video = (await import('../models/Video.js')).default;
+    const Assessment = (await import('../models/Assessment.js')).default;
+    const Exam = (await import('../models/Exam.js')).default;
+    const ExamResult = (await import('../models/ExamResult.js')).default;
+    const Question = (await import('../models/Question.js')).default;
+    const Class = (await import('../models/Class.js')).default;
+    const Stream = (await import('../models/Stream.js')).default;
+    
+    // Get all exams created by this admin to delete their results and questions
+    const adminExams = await Exam.find({ adminId: adminId });
+    const examIds = adminExams.map(exam => exam._id);
+    
+    // Delete all related data in parallel
+    const deletionResults = await Promise.all([
+      // Delete all students assigned to this admin
+      User.deleteMany({ assignedAdmin: adminId }),
+      // Delete all teachers assigned to this admin
+      Teacher.deleteMany({ adminId }),
+      // Delete all videos created by this admin
+      Video.deleteMany({ adminId }),
+      // Delete all assessments created by this admin
+      Assessment.deleteMany({ adminId }),
+      // Delete all exams created by this admin
+      Exam.deleteMany({ adminId }),
+      // Delete all exam results for exams created by this admin
+      ExamResult.deleteMany({ adminId }),
+      // Also delete exam results for the specific exams
+      ExamResult.deleteMany({ examId: { $in: examIds } }),
+      // Delete all questions created by this admin
+      Question.deleteMany({ adminId }),
+      // Delete all classes assigned to this admin
+      Class.deleteMany({ assignedAdmin: adminId }),
+      // Delete all streams created by this admin
+      Stream.deleteMany({ adminId }),
+      // Finally, delete the admin itself - use deleteOne to ensure complete removal
+      User.deleteOne({ _id: adminId })
+    ]);
+    
+    // Verify the admin was actually deleted
+    const verifyDeletion = await User.findById(adminId);
+    if (verifyDeletion) {
+      console.error(`❌ WARNING: Admin ${adminId} still exists after deletion attempt!`);
+      // Force delete using deleteOne
+      await User.deleteOne({ _id: adminId });
+    }
+    
+    // Also verify by email to ensure no duplicate exists
+    const verifyByEmail = await User.findOne({ email: adminEmail.toLowerCase() });
+    if (verifyByEmail && verifyByEmail._id.toString() === adminId) {
+      console.error(`❌ WARNING: Admin with email ${adminEmail} still exists! Force deleting...`);
+      await User.deleteOne({ email: adminEmail.toLowerCase() });
+    }
+    
+    console.log(`✅ Successfully deleted school (admin) ${adminId} (${adminEmail}) and all associated data`);
+    console.log(`   Deleted: ${deletionResults[0].deletedCount} students, ${deletionResults[1].deletedCount} teachers, ${deletionResults[2].deletedCount} videos`);
+    
+    res.json({
+      success: true,
+      message: 'School and all associated data (students, teachers, exams, results, content) deleted successfully',
+      deletedEmail: adminEmail // Return email so frontend knows it can be reused
+    });
+  } catch (error) {
+    console.error('Delete school error:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete school', error: error.message });
+  }
+};
+
+// Get All Users (Global view)
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find()
+      .populate('assignedAdmin', 'fullName email')
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    console.error('Get users error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch users' });
+  }
+};
+
+// Create New User (Global)
+export const createUser = async (req, res) => {
+  try {
+    const { name, email, role, details, assignedAdmin } = req.body;
+    
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User already exists' });
+    }
+    
+    // Create new user
+    const hashedPassword = await bcrypt.hash('password123', 10); // Default password
+    const newUser = new User({
+      fullName: name,
+      email,
+      password: hashedPassword,
+      role: role,
+      details: details,
+      assignedAdmin: assignedAdmin || null,
+      isActive: true
+    });
+    
+    await newUser.save();
+    
+    res.json({
+      success: true,
+      message: 'User created successfully',
+      data: {
+        id: newUser._id,
+        name: newUser.fullName,
+        email: newUser.email,
+        role: newUser.role,
+        details: newUser.details,
+        assignedAdmin: newUser.assignedAdmin,
+        status: 'Active',
+        joinDate: newUser.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create user' });
+  }
+};
+
+// Get All Teachers (Global view)
+export const getAllTeachers = async (req, res) => {
+  try {
+    const teachers = await Teacher.find()
+      .populate('subjects', 'name')
+      .populate('adminId', 'fullName email')
+      .select('-password')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: teachers
+    });
+  } catch (error) {
+    console.error('Get teachers error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch teachers' });
+  }
+};
+
+// Create New Teacher (Global)
+export const createTeacher = async (req, res) => {
+  try {
+    const { email, password, fullName, phone, department, qualifications, subjects, adminId } = req.body;
+    
+    // Check if teacher already exists
+    const existingTeacher = await Teacher.findOne({ email });
+    if (existingTeacher) {
+      return res.status(400).json({ success: false, message: 'Teacher already exists' });
+    }
+    
+    // Verify admin exists
+    if (adminId) {
+      const admin = await User.findById(adminId);
+      if (!admin || admin.role !== 'admin') {
+        return res.status(400).json({ success: false, message: 'Invalid admin ID' });
+      }
+    }
+    
+    // Create new teacher
+    const hashedPassword = await bcrypt.hash(password || 'Password123', 12);
+    const newTeacher = new Teacher({
+      email,
+      password: hashedPassword,
+      fullName,
+      phone: phone || '',
+      department: department || '',
+      qualifications: qualifications || '',
+      subjects: subjects || [],
+      role: 'teacher',
+      isActive: true,
+      adminId: adminId || null
+    });
+    
+    await newTeacher.save();
+    
+    res.json({
+      success: true,
+      message: 'Teacher created successfully',
+      data: {
+        id: newTeacher._id,
+        email: newTeacher.email,
+        fullName: newTeacher.fullName,
+        phone: newTeacher.phone,
+        department: newTeacher.department,
+        qualifications: newTeacher.qualifications,
+        subjects: newTeacher.subjects,
+        adminId: newTeacher.adminId,
+        isActive: newTeacher.isActive
+      }
+    });
+  } catch (error) {
+    console.error('Create teacher error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create teacher' });
+  }
+};
+
+// Get All Courses/Videos (Global view)
+export const getAllCourses = async (req, res) => {
+  try {
+    const courses = await Video.find()
+      .populate('createdBy', 'fullName')
+      .populate('adminId', 'fullName email')
+      .sort({ createdAt: -1 });
+    
+    res.json({
+      success: true,
+      data: courses
+    });
+  } catch (error) {
+    console.error('Get courses error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch courses' });
+  }
+};
+
+// Create New Course (Global)
+export const createCourse = async (req, res) => {
+  try {
+    const { title, subject, grade, board, teacherId, adminId } = req.body;
+    
+    // Find teacher
+    let teacherQuery = { _id: teacherId };
+    if (adminId) {
+      teacherQuery.adminId = adminId;
+    }
+    const teacher = await Teacher.findOne(teacherQuery);
+    
+    if (!teacher) {
+      return res.status(400).json({ success: false, message: 'Teacher not found' });
+    }
+    
+    const newCourse = new Video({
+      title: title,
+      subject: subject,
+      grade: grade,
+      board: board,
+      teacher: teacherId,
+      createdBy: teacherId,
+      description: `${subject} course for ${grade} - ${board}`,
+      isPublished: true,
+      adminId: adminId || teacher.adminId
+    });
+    
+    await newCourse.save();
+    
+    res.json({
+      success: true,
+      message: 'Course created successfully',
+      data: {
+        id: newCourse._id,
+        title: newCourse.title,
+        subject: newCourse.subject,
+        grade: newCourse.grade,
+        board: newCourse.board,
+        teacher: teacher.fullName,
+        adminId: newCourse.adminId,
+        status: 'Published',
+        created: newCourse.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create course error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create course' });
+  }
+};
+
+// Get Real-time Analytics with Top Scorers and Low-performing Admins
+export const getRealTimeAnalytics = async (req, res) => {
+  try {
+    // Get all exam results with populated user and exam data
+    const allResults = await ExamResult.find({})
+      .populate('userId', 'fullName email')
+      .populate('examId', 'title examType')
+      .populate('adminId', 'fullName email')
+      .sort({ completedAt: -1 })
+      .limit(1000); // Limit for performance
+    
+    // Get top scorers per exam
+    const examTopScorers = {};
+    allResults.forEach(result => {
+      const examId = result.examId?._id?.toString() || result.examId?.toString();
+      const examTitle = result.examId?.title || result.examTitle || 'Unknown Exam';
+      
+      if (!examTopScorers[examId]) {
+        examTopScorers[examId] = {
+          examId,
+          examTitle,
+          topScorers: []
+        };
+      }
+      
+      examTopScorers[examId].topScorers.push({
+        studentName: result.userId?.fullName || 'Unknown',
+        studentEmail: result.userId?.email || 'unknown@email.com',
+        marks: result.obtainedMarks,
+        totalMarks: result.totalMarks,
+        percentage: result.percentage,
+        completedAt: result.completedAt
+      });
+    });
+    
+    // Sort top scorers for each exam and get top 5
+    Object.keys(examTopScorers).forEach(examId => {
+      examTopScorers[examId].topScorers.sort((a, b) => b.percentage - a.percentage);
+      examTopScorers[examId].topScorers = examTopScorers[examId].topScorers.slice(0, 5);
+    });
+    
+    // Get admin performance metrics
+    const adminPerformance = {};
+    allResults.forEach(result => {
+      const adminId = result.adminId?._id?.toString() || result.adminId?.toString();
+      if (!adminId) return;
+      
+      if (!adminPerformance[adminId]) {
+        adminPerformance[adminId] = {
+          adminId,
+          adminName: result.adminId?.fullName || result.adminId?.email || 'Unknown Admin',
+          adminEmail: result.adminId?.email || 'unknown@email.com',
+          totalStudents: new Set(),
+          totalExams: 0,
+          totalMarksObtained: 0,
+          totalMarksPossible: 0,
+          studentResults: []
+        };
+      }
+      
+      const admin = adminPerformance[adminId];
+      admin.totalExams += 1;
+      admin.totalMarksObtained += result.obtainedMarks;
+      admin.totalMarksPossible += result.totalMarks;
+      
+      if (result.userId?._id) {
+        admin.totalStudents.add(result.userId._id.toString());
+      }
+      
+      admin.studentResults.push({
+        studentName: result.userId?.fullName || 'Unknown',
+        percentage: result.percentage,
+        marks: result.obtainedMarks,
+        totalMarks: result.totalMarks
+      });
+    });
+    
+    // Calculate average performance per admin
+    const adminAnalytics = Object.values(adminPerformance).map(admin => {
+      const avgPercentage = admin.totalMarksPossible > 0 
+        ? (admin.totalMarksObtained / admin.totalMarksPossible) * 100 
+        : 0;
+      
+      // Calculate average student performance
+      const avgStudentPerformance = admin.studentResults.length > 0
+        ? admin.studentResults.reduce((sum, r) => sum + r.percentage, 0) / admin.studentResults.length
+        : 0;
+      
+      return {
+        adminId: admin.adminId,
+        adminName: admin.adminName,
+        adminEmail: admin.adminEmail,
+        totalStudents: admin.totalStudents.size,
+        totalExams: admin.totalExams,
+        averageScore: avgPercentage.toFixed(1),
+        averageStudentPerformance: avgStudentPerformance.toFixed(1),
+        totalMarksObtained: admin.totalMarksObtained,
+        totalMarksPossible: admin.totalMarksPossible
+      };
+    });
+    
+    // Identify low-performing admins (below 50% average)
+    const lowPerformingAdmins = adminAnalytics
+      .filter(admin => parseFloat(admin.averageScore) < 50)
+      .sort((a, b) => parseFloat(a.averageScore) - parseFloat(b.averageScore));
+    
+    // Get overall analytics
+    const totalStudents = await User.countDocuments({ role: 'student' });
+    const totalExams = await Exam.countDocuments();
+    const overallAverage = allResults.length > 0
+      ? allResults.reduce((sum, r) => sum + r.percentage, 0) / allResults.length
+      : 0;
+    
+    res.json({
+      success: true,
+      data: {
+        topScorersByExam: Object.values(examTopScorers),
+        lowPerformingAdmins,
+        adminAnalytics,
+        overallMetrics: {
+          totalStudents,
+          totalExams,
+          totalExamResults: allResults.length,
+          overallAverage: overallAverage.toFixed(1)
+        },
+        recentActivity: allResults.slice(0, 10).map(result => ({
+          examTitle: result.examId?.title || result.examTitle,
+          studentName: result.userId?.fullName || 'Unknown',
+          score: result.percentage.toFixed(1),
+          completedAt: result.completedAt
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Real-time analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch real-time analytics' });
+  }
+};
+
+// Get Analytics (Global view)
+export const getAnalytics = async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
+    const totalTeachers = await Teacher.countDocuments();
+    const totalVideos = await Video.countDocuments();
+    const totalAdmins = await User.countDocuments({ role: 'admin' });
+    
+    // Calculate daily active users (mock data)
+    const dailyActive = Math.floor(totalUsers * 0.1);
+    const weeklyActive = Math.floor(totalUsers * 0.3);
+    const monthlyActive = Math.floor(totalUsers * 0.7);
+    
+    res.json({
+      success: true,
+      data: {
+        dailyActive,
+        weeklyActive,
+        monthlyActive,
+        avgSessionTime: "24m 35s",
+        completionRate: 76,
+        revenueGrowth: 23.5,
+        userGrowth: 18.2,
+        courseEngagement: 89,
+        totalUsers,
+        totalTeachers,
+        totalVideos,
+        totalAdmins
+      }
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch analytics' });
+  }
+};
+
+// Get Subscriptions (Global view)
+export const getSubscriptions = async (req, res) => {
+  try {
+    // Mock subscription data for now
+    const subscriptions = [
+      { id: 1, user: "Rahul Sharma", plan: "Premium", amount: 999, status: "Active", nextBilling: "2024-09-15", paymentMethod: "Credit Card" },
+      { id: 2, user: "Amit Kumar", plan: "Basic", amount: 499, status: "Active", nextBilling: "2024-09-20", paymentMethod: "UPI" },
+      { id: 3, user: "Kavya Reddy", plan: "Premium", amount: 999, status: "Cancelled", nextBilling: "-", paymentMethod: "Net Banking" },
+      { id: 4, user: "Arjun Patel", plan: "Pro", amount: 1499, status: "Active", nextBilling: "2024-09-18", paymentMethod: "Debit Card" },
+      { id: 5, user: "Sneha Jain", plan: "Basic", amount: 499, status: "Pending", nextBilling: "2024-09-12", paymentMethod: "UPI" }
+    ];
+    
+    res.json({
+      success: true,
+      data: subscriptions
+    });
+  } catch (error) {
+    console.error('Subscriptions error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch subscriptions' });
+  }
+};
+
+// Export Data (Global)
+export const exportData = async (req, res) => {
+  try {
+    const users = await User.find().select('-password').populate('assignedAdmin', 'fullName email');
+    const videos = await Video.find().populate('adminId', 'fullName email');
+    const teachers = await Teacher.find().populate('adminId', 'fullName email');
+    const assessments = await Assessment.find().populate('adminId', 'fullName email');
+    
+    const exportData = {
+      users: users,
+      videos: videos,
+      teachers: teachers,
+      assessments: assessments,
+      exportDate: new Date().toISOString()
+    };
+    
+    res.json({
+      success: true,
+      data: exportData
+    });
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to export data' });
+  }
+};
+
+
