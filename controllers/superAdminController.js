@@ -7,110 +7,39 @@ import Assessment from '../models/Assessment.js';
 import Exam from '../models/Exam.js';
 import ExamResult from '../models/ExamResult.js';
 
-// Get JWT secret - require it from environment
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET environment variable is required');
-  process.exit(1);
-}
-
 // Super Admin Login
 export const superAdminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email and password are required' 
-      });
-    }
-    
-    // Check for Super Admin in database
-    const superAdminUser = await User.findOne({ 
-      email: email.toLowerCase().trim(),
-      role: 'super-admin',
-      isActive: true
-    });
-    
-    if (superAdminUser) {
-      const isPasswordValid = await bcrypt.compare(password, superAdminUser.password);
-      if (isPasswordValid) {
-        const token = jwt.sign(
-          { 
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
-        
-        await User.findByIdAndUpdate(superAdminUser._id, { lastLogin: new Date() });
-        
-        return res.json({
-          success: true,
-          token,
-          user: {
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          }
-        });
-      }
-    }
-    
-    // Fallback: Check environment variables for super admin (for initial setup)
-    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
-    const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD;
-    
-    if (SUPER_ADMIN_EMAIL && SUPER_ADMIN_PASSWORD && 
-        email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() && 
-        password === SUPER_ADMIN_PASSWORD) {
-      // Create super admin user in database if it doesn't exist
-      let superAdmin = await User.findOne({ role: 'super-admin' });
-      if (!superAdmin) {
-        const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 12);
-        superAdmin = new User({
-          email: SUPER_ADMIN_EMAIL.toLowerCase().trim(),
-          password: hashedPassword,
-          fullName: 'Super Admin',
-          role: 'super-admin',
-          isActive: true
-        });
-        await superAdmin.save();
-      }
-      
+    // Check super admin credentials
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
       const token = jwt.sign(
         { 
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
           role: 'super-admin'
         },
-        JWT_SECRET,
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
       
-      await User.findByIdAndUpdate(superAdmin._id, { lastLogin: new Date() });
-      
-      return res.json({
+      res.json({
         success: true,
         token,
         user: {
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
           role: 'super-admin'
         }
       });
+    } else {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
-    
-    res.status(401).json({ success: false, message: 'Invalid credentials' });
   } catch (error) {
-    console.error('Super admin login error:', error.message);
+    console.error('Super admin login error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };

@@ -1,8 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import connectDB from './config/database.js';
@@ -10,55 +8,14 @@ import superAdminRoutes from './routes/superAdmin.js';
 import adminRoutes from './routes/admin.js';
 import { verifyToken, verifySuperAdmin } from './middleware/auth.js';
 import User from './models/User.js';
-import { validateEnv } from './utils/envValidator.js';
 
 // Load environment variables
 dotenv.config();
 
-// Validate required environment variables
-try {
-  validateEnv();
-} catch (error) {
-  console.error('❌ Environment validation failed:', error.message);
-  process.exit(1);
-}
-
-// Require JWT_SECRET
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET environment variable is required');
-  process.exit(1);
-}
-
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Security middleware
-app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
-  crossOriginEmbedderPolicy: false
-}));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // Limit each IP to 5 login requests per windowMs
-  message: 'Too many login attempts, please try again later.',
-  skipSuccessfulRequests: true,
-});
-
-app.use('/api/', limiter);
-app.use('/api/auth/login', authLimiter);
-
-// CORS middleware
+// Middleware
 app.use(cors({
   origin: process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://asli-frontend.vercel.app' : 'http://localhost:5173'),
   credentials: true
@@ -83,106 +40,49 @@ app.get('/api/health', (req, res) => {
 // Auth login endpoint (Handles Super Admin and regular admin logins)
 app.post('/api/auth/login', async (req, res) => {
   try {
+    console.log('Login attempt:', { email: req.body.email, timestamp: new Date().toISOString() });
+    
     const { email, password } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Email and password are required' 
-      });
-    }
-    
-    // Check for Super Admin in database first
-    const superAdminUser = await User.findOne({ 
-      email: email.toLowerCase().trim(),
-      role: 'super-admin',
-      isActive: true
-    });
-    
-    if (superAdminUser) {
-      const isPasswordValid = await bcrypt.compare(password, superAdminUser.password);
-      if (isPasswordValid) {
-        const token = jwt.sign(
-          { 
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
-        
-        await User.findByIdAndUpdate(superAdminUser._id, { lastLogin: new Date() });
-        
-        return res.json({
-          success: true,
-          token,
-          user: {
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          }
-        });
-      }
-    }
-    
-    // Fallback: Check environment variables for super admin (for initial setup)
-    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
-    const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD;
-    
-    if (SUPER_ADMIN_EMAIL && SUPER_ADMIN_PASSWORD && 
-        email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() && 
-        password === SUPER_ADMIN_PASSWORD) {
-      // Create super admin user in database if it doesn't exist
-      let superAdmin = await User.findOne({ role: 'super-admin' });
-      if (!superAdmin) {
-        const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 12);
-        superAdmin = new User({
-          email: SUPER_ADMIN_EMAIL.toLowerCase().trim(),
-          password: hashedPassword,
-          fullName: 'Super Admin',
-          role: 'super-admin',
-          isActive: true
-        });
-        await superAdmin.save();
-      }
-      
+    // Check for Super Admin credentials first
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+      console.log('Super Admin login detected');
       const token = jwt.sign(
         { 
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
           role: 'super-admin'
         },
-        JWT_SECRET,
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
-      
-      await User.findByIdAndUpdate(superAdmin._id, { lastLogin: new Date() });
       
       return res.json({
         success: true,
         token,
         user: {
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
           role: 'super-admin'
         }
       });
     }
     
-    // Check for regular admin/teacher/student login in database
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    // Check for regular admin login in database
+    console.log('Looking for user with email:', email.toLowerCase());
+    const user = await User.findOne({ email: email.toLowerCase() });
     
     if (!user) {
+      console.log('User not found in database');
       return res.status(401).json({ 
         success: false,
         message: 'Invalid credentials' 
       });
     }
+    
+    console.log('User found:', user.email, 'Active:', user.isActive, 'Role:', user.role);
     
     // Check if user is active
     if (!user.isActive) {
@@ -193,9 +93,12 @@ app.post('/api/auth/login', async (req, res) => {
     }
     
     // Verify password
+    console.log('Verifying password for user:', user.email);
     const isPasswordValid = await bcrypt.compare(password, user.password);
+    console.log('Password valid:', isPasswordValid);
     
     if (!isPasswordValid) {
+      console.log('Password verification failed');
       return res.status(401).json({ 
         success: false,
         message: 'Invalid credentials' 
@@ -205,17 +108,19 @@ app.post('/api/auth/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { 
-        id: user._id.toString(),
+        id: user._id,
         email: user.email,
         fullName: user.fullName,
         role: user.role
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
     
     // Update last login
     await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
+    
+    console.log(`${user.role} login successful:`, { email: user.email, role: user.role });
     
     res.json({
       success: true,
@@ -229,7 +134,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
     
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('Login error:', error);
     res.status(500).json({ 
       success: false,
       message: 'Server error during login' 
@@ -249,7 +154,7 @@ app.get('/api/auth/me', async (req, res) => {
     }
 
     const token = authHeader.substring(7);
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     
     // Get user from database
     const user = await User.findById(decoded.id).select('-password');
@@ -270,7 +175,7 @@ app.get('/api/auth/me', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Auth verification error:', error.message);
+    console.error('Auth verification error:', error);
     res.status(401).json({
       success: false,
       message: 'Invalid token'
@@ -289,12 +194,7 @@ app.use('/api/admin', adminRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  // Log full error in development, minimal info in production
-  if (process.env.NODE_ENV === 'development') {
-    console.error('Error:', err);
-  } else {
-    console.error('Error:', err.message);
-  }
+  console.error('Error:', err);
   
   if (err.name === 'ValidationError') {
     return res.status(400).json({
@@ -318,11 +218,9 @@ app.use((err, req, res, next) => {
     });
   }
   
-  // Don't expose stack traces in production
   res.status(500).json({
     success: false,
-    message: 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { error: err.message })
+    message: 'Internal Server Error'
   });
 });
 
@@ -338,23 +236,22 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log('🚀 Super Admin Backend Server Started!');
   console.log(`📡 Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
                   process.env.RAILWAY_STATIC_URL || 
                   `http://localhost:${PORT}`;
   console.log(`🌐 API Base URL: ${baseUrl}`);
+  console.log(`🔐 Super Admin Login: ${baseUrl}/api/super-admin/login`);
   console.log(`📊 Dashboard Stats: ${baseUrl}/api/super-admin/stats`);
+  console.log('');
+  console.log('🔑 Super Admin Credentials:');
+  console.log('   Email: Amenity@gmail.com');
+  console.log('   Password: Amenity');
+  console.log('');
+  const frontendUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
+                      process.env.RAILWAY_STATIC_URL || 
+                      'http://localhost:3001';
+  console.log(`📱 Frontend should connect to: ${frontendUrl}`);
   console.log('✅ Ready to accept requests!');
-  
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('');
-    console.log('⚠️  Development mode: Using environment variables for super admin');
-    if (process.env.SUPER_ADMIN_EMAIL) {
-      console.log(`   Super Admin Email: ${process.env.SUPER_ADMIN_EMAIL}`);
-    } else {
-      console.log('   ⚠️  SUPER_ADMIN_EMAIL not set - create super admin user in database');
-    }
-  }
 });
 
 export default app;

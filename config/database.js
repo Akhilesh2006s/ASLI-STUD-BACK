@@ -3,14 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Require MONGO_URI from environment - no fallback for security
-const MONGO_URI = process.env.MONGO_URI;
-
-if (!MONGO_URI) {
-  console.error('❌ MONGO_URI environment variable is required');
-  console.error('Please set MONGO_URI in your .env file');
-  process.exit(1);
-}
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
 
 const connectDB = async () => {
   try {

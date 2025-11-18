@@ -28,25 +28,9 @@ import teacherRoutes from './routes/teacher.js';
 import studentRoutes from './routes/student.js';
 import aiRoutes from './routes/ai.js';
 import streamRoutes from './routes/streams.js';
-import { validateEnv } from './utils/envValidator.js';
 
 // Load environment variables
 dotenv.config();
-
-// Validate required environment variables
-try {
-  validateEnv();
-} catch (error) {
-  console.error('❌ Environment validation failed:', error.message);
-  process.exit(1);
-}
-
-// Require JWT_SECRET
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.error('❌ JWT_SECRET environment variable is required');
-  process.exit(1);
-}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -57,12 +41,8 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-// MongoDB connection - require from environment
-const MONGO_URI = process.env.MONGO_URI;
-if (!MONGO_URI) {
-  console.error('❌ MONGO_URI environment variable is required');
-  process.exit(1);
-}
+// MongoDB connection
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
 
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
@@ -275,18 +255,32 @@ passport.use(new LocalStrategy({
   passwordField: 'password'
 }, async (email, password, done) => {
   try {
-    // Check User model first
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    if (user) {
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (isPasswordValid && user.isActive) {
-        user.lastLogin = new Date();
-        await user.save();
-        return done(null, user);
+    // Check for specific admin credentials first
+    if (email === 'amenityforge@gmail.com' && password === 'Amenity') {
+      // Create or find admin user
+      let adminUser = await User.findOne({ email: 'amenityforge@gmail.com' });
+      
+      if (!adminUser) {
+        // Create admin user if doesn't exist
+        const hashedPassword = await bcrypt.hash('Amenity', 12);
+        adminUser = new User({
+          email: 'amenityforge@gmail.com',
+          password: hashedPassword,
+          fullName: 'Admin User',
+          role: 'admin',
+          isActive: true
+        });
+        await adminUser.save();
+      } else {
+        // Update last login
+        adminUser.lastLogin = new Date();
+        await adminUser.save();
       }
+      
+      return done(null, adminUser);
     }
 
-    // Check Teacher model
+    // Check Teacher model first
     const teacher = await Teacher.findOne({ email });
     console.log('Teacher lookup for', email, ':', teacher ? 'Found' : 'Not found');
     
@@ -381,7 +375,7 @@ const requireAuth = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     req.user = decoded;
     req.isAuthenticated = () => true; // Add this for compatibility
     console.log('JWT Auth successful:', decoded);
@@ -488,126 +482,61 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ message: 'Email and password are required' });
     }
     
-    // Check for Super Admin in database first
-    const superAdminUser = await User.findOne({ 
-      email: email.toLowerCase().trim(),
-      role: 'super-admin',
-      isActive: true
-    });
-    
-    if (superAdminUser) {
-      const isPasswordValid = await bcrypt.compare(password, superAdminUser.password);
-      if (isPasswordValid) {
-        const token = jwt.sign(
-          { 
-            id: superAdminUser._id.toString(),
-            userId: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
-        
-        await User.findByIdAndUpdate(superAdminUser._id, { lastLogin: new Date() });
-        
-        return res.json({
-          success: true,
-          token,
-          user: {
-            id: superAdminUser._id.toString(),
-            _id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          }
-        });
-      }
-    }
-    
-    // Fallback: Check environment variables for super admin (for initial setup)
-    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
-    const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD;
-    
-    if (SUPER_ADMIN_EMAIL && SUPER_ADMIN_PASSWORD && 
-        email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() && 
-        password === SUPER_ADMIN_PASSWORD) {
-      // Create super admin user in database if it doesn't exist
-      let superAdmin = await User.findOne({ role: 'super-admin' });
-      if (!superAdmin) {
-        const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 12);
-        superAdmin = new User({
-          email: SUPER_ADMIN_EMAIL.toLowerCase().trim(),
-          password: hashedPassword,
-          fullName: 'Super Admin',
-          role: 'super-admin',
-          isActive: true
-        });
-        await superAdmin.save();
-      }
-      
+    // Check for Super Admin credentials first
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+      console.log('Super Admin login detected');
       const token = jwt.sign(
         { 
-          id: superAdmin._id.toString(),
-          userId: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          userId: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
           role: 'super-admin'
         },
-        JWT_SECRET,
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
-      
-      await User.findByIdAndUpdate(superAdmin._id, { lastLogin: new Date() });
       
       return res.json({
         success: true,
         token,
         user: {
-          id: superAdmin._id.toString(),
-          _id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          _id: 'super-admin-001',
+          email: 'Amenity@gmail.com',
+          fullName: 'Super Admin',
           role: 'super-admin'
         }
       });
     }
     
-    // Check for regular users in database
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
-    
-    if (user) {
-      // Check if user is active
-      if (!user.isActive) {
-        return res.status(401).json({ 
-          success: false,
-          message: 'Account is deactivated' 
+    // Check for specific admin credentials
+    if (email === 'amenityforge@gmail.com' && password === 'Amenity') {
+      let adminUser = await User.findOne({ email: 'amenityforge@gmail.com' });
+      
+      if (!adminUser) {
+        const hashedPassword = await bcrypt.hash('Amenity', 12);
+        adminUser = new User({
+          email: 'amenityforge@gmail.com',
+          password: hashedPassword,
+          fullName: 'Admin User',
+          role: 'admin',
+          isActive: true
         });
+        await adminUser.save();
       }
       
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      
-      if (!isPasswordValid) {
-        return res.status(401).json({ 
-          success: false,
-          message: 'Invalid credentials' 
-        });
-      }
-      
-      // Update last login
-      await User.findByIdAndUpdate(user._id, { lastLogin: new Date() });
+      // Update last login without triggering full document validation
+      await User.findByIdAndUpdate(adminUser._id, { lastLogin: new Date() }, { runValidators: false });
       
       const token = jwt.sign(
         { 
-          userId: user._id.toString(), 
-          id: user._id.toString(),
-          email: user.email,
-          fullName: user.fullName,
-          role: user.role 
+          userId: adminUser._id.toString(), 
+          id: adminUser._id.toString(),
+          email: adminUser.email, 
+          role: adminUser.role 
         },
-        JWT_SECRET,
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
       
@@ -615,11 +544,11 @@ app.post('/api/auth/login', async (req, res) => {
         success: true,
         token,
         user: {
-          id: user._id.toString(),
-          _id: user._id.toString(),
-          email: user.email,
-          fullName: user.fullName,
-          role: user.role
+          id: adminUser._id.toString(),
+          _id: adminUser._id.toString(),
+          email: adminUser.email,
+          fullName: adminUser.fullName,
+          role: adminUser.role
         }
       });
     }
@@ -649,7 +578,7 @@ app.post('/api/auth/login', async (req, res) => {
             email: teacher.email, 
             role: 'teacher' 
           },
-          JWT_SECRET,
+          process.env.JWT_SECRET || 'your-secret-key',
           { expiresIn: '24h' }
         );
         
@@ -735,7 +664,7 @@ app.post('/api/auth/login', async (req, res) => {
         email: user.email, 
         role: user.role 
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '24h' }
     );
 
@@ -1070,7 +999,7 @@ app.get('/api/admin/users', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     // Only return students assigned to this admin
@@ -1094,7 +1023,7 @@ app.post('/api/admin/users', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     const { email, password, fullName, classNumber, phone, role = 'student', isActive = true } = req.body;
@@ -1230,7 +1159,7 @@ app.get('/api/admin/teachers', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     // Only return teachers assigned to this admin
@@ -1271,7 +1200,7 @@ app.post('/api/admin/teachers', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     const { email, password, fullName, phone, department, qualifications, subjects } = req.body;
@@ -2761,7 +2690,7 @@ app.post('/api/admin/users/upload', upload.single('file'), async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
     console.log('Admin ID for CSV upload:', adminId);
 
@@ -3015,7 +2944,7 @@ app.get('/api/admin/classes', async (req, res) => {
       return res.status(401).json({ message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     // Get classes from Class model
@@ -3119,7 +3048,7 @@ app.post('/api/admin/classes', async (req, res) => {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
     const adminId = decoded.userId;
 
     const { classNumber, section, description } = req.body;
@@ -3787,96 +3716,32 @@ app.post('/api/super-admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Email and password are required' 
-      });
-    }
-    
-    // Check for Super Admin in database
-    const superAdminUser = await User.findOne({ 
-      email: email.toLowerCase().trim(),
-      role: 'super-admin',
-      isActive: true
-    });
-    
-    if (superAdminUser) {
-      const isPasswordValid = await bcrypt.compare(password, superAdminUser.password);
-      if (isPasswordValid) {
-        const token = jwt.sign(
-          { 
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          },
-          JWT_SECRET,
-          { expiresIn: '24h' }
-        );
-        
-        await User.findByIdAndUpdate(superAdminUser._id, { lastLogin: new Date() });
-        
-        return res.json({
-          success: true,
-          token,
-          user: {
-            id: superAdminUser._id.toString(),
-            email: superAdminUser.email,
-            fullName: superAdminUser.fullName,
-            role: 'super-admin'
-          }
-        });
-      }
-    }
-    
-    // Fallback: Check environment variables for super admin (for initial setup)
-    const SUPER_ADMIN_EMAIL = process.env.SUPER_ADMIN_EMAIL;
-    const SUPER_ADMIN_PASSWORD = process.env.SUPER_ADMIN_PASSWORD;
-    
-    if (SUPER_ADMIN_EMAIL && SUPER_ADMIN_PASSWORD && 
-        email.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() && 
-        password === SUPER_ADMIN_PASSWORD) {
-      // Create super admin user in database if it doesn't exist
-      let superAdmin = await User.findOne({ role: 'super-admin' });
-      if (!superAdmin) {
-        const hashedPassword = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 12);
-        superAdmin = new User({
-          email: SUPER_ADMIN_EMAIL.toLowerCase().trim(),
-          password: hashedPassword,
-          fullName: 'Super Admin',
-          role: 'super-admin',
-          isActive: true
-        });
-        await superAdmin.save();
-      }
-      
+    // Check super admin credentials
+    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
       const token = jwt.sign(
         { 
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
           role: 'super-admin'
         },
-        JWT_SECRET,
+        process.env.JWT_SECRET || 'your-secret-key',
         { expiresIn: '24h' }
       );
       
-      await User.findByIdAndUpdate(superAdmin._id, { lastLogin: new Date() });
-      
-      return res.json({
+      res.json({
         success: true,
         token,
         user: {
-          id: superAdmin._id.toString(),
-          email: superAdmin.email,
-          fullName: superAdmin.fullName,
+          id: 'super-admin-001',
+          email: email,
+          fullName: 'Super Admin',
           role: 'super-admin'
         }
       });
+    } else {
+      res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
-    
-    res.status(401).json({ success: false, message: 'Invalid credentials' });
   } catch (error) {
     console.error('Super admin login error:', error);
     res.status(500).json({ success: false, message: 'Server error' });
@@ -4185,7 +4050,7 @@ app.post('/api/teacher/videos-working', async (req, res) => {
     console.log('Token:', token);
     
     // Verify token and get user info (fallback secret for local dev)
-    const jwtSecret = JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, jwtSecret);
     console.log('Decoded token:', decoded);
     
@@ -4469,7 +4334,7 @@ app.post('/api/teacher/assessments', async (req, res) => {
     }
     
     const token = authHeader.split(' ')[1];
-    const jwtSecret = JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, jwtSecret);
     
     const teacherId = decoded.userId || decoded.id || decoded._id;
@@ -4525,7 +4390,7 @@ app.delete('/api/videos/:id', async (req, res) => {
     }
     
     const token = authHeader.split(' ')[1];
-    const jwtSecret = JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, jwtSecret);
     
     const teacherId = decoded.userId || decoded.id || decoded._id;
@@ -4563,7 +4428,7 @@ app.post('/api/teacher/videos', async (req, res) => {
       return res.status(401).json({ success: false, message: 'No token provided' });
     }
     const token = authHeader.split(' ')[1];
-    const jwtSecret = JWT_SECRET;
+    const jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, jwtSecret);
 
     // Resolve teacher
