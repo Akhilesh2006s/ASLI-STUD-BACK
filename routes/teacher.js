@@ -225,8 +225,8 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Student work or file is required' });
     }
 
-    // Import Gemini service
-    const { restGeminiService } = await import('../services/rest-gemini.cjs');
+    // Import Ollama service
+    const { ollamaService } = await import('../services/ollama-service.cjs');
     
     // Extract text from file if uploaded
     let workText = studentWork || '';
@@ -238,36 +238,17 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
         // For PDFs, we'll need to extract text (simplified - in production use pdf-parse or similar)
         workText = '[PDF file uploaded - content extraction would be implemented here]';
       } else if (file.mimetype.startsWith('image/')) {
-        // For images, convert to base64 and use Gemini vision
+        // For images, convert to base64 and use Ollama vision
         const imageBase64 = file.buffer.toString('base64');
-        const imageMimeType = file.mimetype;
         
-        // Use Gemini to extract text from image
-        const prompt = `Extract all text from this image. If this is student work (essay, assignment, answer), provide the complete text content.`;
+        // Use Ollama to extract text from image
+        const context = 'Extract all text from this image. If this is student work (essay, assignment, answer), provide the complete text content.';
         
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY || 'AIzaSyDExDEuif6KRk5suciCPLr1sDqkQFDfNb8'}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    data: imageBase64,
-                    mimeType: imageMimeType
-                  }
-                }
-              ]
-            }]
-          })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          workText = data.candidates[0].content.parts[0].text;
+        try {
+          workText = await ollamaService.analyzeImage(imageBase64, context);
+        } catch (error) {
+          console.error('Image analysis error:', error);
+          workText = '[Image uploaded - text extraction failed. Please provide text manually or ensure Ollama vision model is installed.]';
         }
       } else {
         workText = '[File uploaded - text extraction would be implemented for this file type]';
@@ -307,7 +288,7 @@ Please provide:
 Format your response clearly with sections and bullet points.`;
 
     // Generate grading using Gemini
-    const gradingResult = await restGeminiService.generateResponse(gradingPrompt, {}, []);
+        const gradingResult = await ollamaService.generateResponse(gradingPrompt, {}, []);
     
     res.json({
       success: true,

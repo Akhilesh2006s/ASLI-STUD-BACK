@@ -349,7 +349,7 @@ router.post('/iq-rank-activities/generate-questions', async (req, res) => {
     // Import required models
     const Subject = (await import('../models/Subject.js')).default;
     const IQRankQuestion = (await import('../models/IQRankQuestion.js')).default;
-    const { restGeminiService } = await import('../services/rest-gemini.cjs');
+    const { ollamaService } = await import('../services/ollama-service.cjs');
 
     // Get subject details
     const subject = await Subject.findById(subjectId);
@@ -394,7 +394,7 @@ Requirements:
 8. Return ONLY the JSON object, no additional text before or after`;
 
     console.log('🤖 Generating questions with Gemini API...');
-    const geminiResponse = await restGeminiService.generateGeminiResponse(prompt, {}, []);
+    const geminiResponse = await ollamaService.generateStructuredContent(prompt, 'json');
 
     // Parse the JSON response from Gemini
     let questionsData;

@@ -3410,7 +3410,7 @@ app.use((err, req, res, next) => {
 });
 
 // AI Chat endpoints
-import { restGeminiService } from './services/rest-gemini.cjs';
+import { ollamaService } from './services/ollama-service.cjs';
 
 // Store chat sessions in memory (in production, use a database)
 const chatSessions = new Map();
@@ -3446,7 +3446,7 @@ app.post('/api/ai-chat', async (req, res) => {
     session.messages.push(userMessage);
 
     // Generate AI response
-    const aiResponse = await restGeminiService.generateResponse(
+    const aiResponse = await ollamaService.generateResponse(
       message, 
       context || session.context, 
       session.messages.slice(-10) // Last 10 messages for context
@@ -3506,7 +3506,7 @@ app.post('/api/ai-chat/analyze-image', async (req, res) => {
     // Remove data URL prefix if present
     const base64Data = image.replace(/^data:image\/[a-z]+;base64,/, '');
     
-    const analysis = await restGeminiService.analyzeImage(base64Data, context);
+    const analysis = await ollamaService.analyzeImage(base64Data, context);
 
     res.json({
       success: true,
@@ -4580,7 +4580,7 @@ This is for IIT JEE Mains coaching, so please include:
 
 Make it practical, engaging, and focused on JEE Mains preparation. Include specific JEE-level problems and techniques that students need to master for the exam.`;
 
-    const lessonPlan = await restGeminiService.generateResponse(prompt, 'jee-lesson-plan-generation', []);
+    const lessonPlan = await ollamaService.generateResponse(prompt, 'jee-lesson-plan-generation', []);
     
     res.json({
       success: true,

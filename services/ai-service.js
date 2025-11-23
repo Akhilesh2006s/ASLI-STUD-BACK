@@ -1,13 +1,13 @@
-import axios from 'axios';
+const fetch = globalThis.fetch;
 
-const GEMINI_API_KEY = 'AIzaSyDExDEuif6KRk5suciCPLr1sDqkQFDfNb8';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+const OLLAMA_TEXT_MODEL = process.env.OLLAMA_TEXT_MODEL || 'llama3';
 
 class AIService {
   async analyzeEducationalData(data) {
     try {
       const prompt = this.buildAnalysisPrompt(data);
-      const response = await this.callGeminiAPI(prompt);
+      const response = await this.callOllamaAPI(prompt);
       return this.parseAIResponse(response);
     } catch (error) {
       console.error('AI Analysis failed:', error);
@@ -134,38 +134,43 @@ Provide comprehensive, actionable insights that can drive educational improvemen
 `;
   }
 
-  async callGeminiAPI(prompt) {
+  async callOllamaAPI(prompt) {
     try {
-      const response = await axios.post(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 8192,
-        }
-      }, {
+      const systemPrompt = 'You are an advanced AI educational analyst. Respond ONLY with valid JSON, no markdown, no code blocks, just pure JSON.';
+      const fullPrompt = `${systemPrompt}\n\n${prompt}`;
+
+      const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        timeout: 30000
+        body: JSON.stringify({
+          model: OLLAMA_TEXT_MODEL,
+          prompt: fullPrompt,
+          stream: false
+        })
       });
 
-      return response.data.candidates[0].content.parts[0].text;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      return data.response || '';
     } catch (error) {
-      console.error('Gemini API call failed:', error);
+      console.error('Ollama API call failed:', error);
       throw error;
     }
   }
 
   parseAIResponse(response) {
     try {
+      // Clean JSON response (remove markdown code blocks if present)
+      let cleanedResponse = response.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      
       // Extract JSON from response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
