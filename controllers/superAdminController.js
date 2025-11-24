@@ -12,13 +12,23 @@ export const superAdminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
     
+    // Super admin credentials
+    const superAdminCredentials = [
+      { email: 'Amenity@gmail.com', password: 'Amenity', fullName: 'Super Admin' },
+      { email: 'sealucknow2017@gmail.com', password: 'Asli123', fullName: 'Super Admin' }
+    ];
+    
     // Check super admin credentials
-    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+    const validCredential = superAdminCredentials.find(
+      cred => cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
+    );
+    
+    if (validCredential) {
       const token = jwt.sign(
         { 
           id: 'super-admin-001',
-          email: email,
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         },
         process.env.JWT_SECRET || 'your-secret-key',
@@ -30,8 +40,8 @@ export const superAdminLogin = async (req, res) => {
         token,
         user: {
           id: 'super-admin-001',
-          email: email,
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         }
       });

@@ -8,7 +8,11 @@ const studentEmail = 'hi@gmail.com'; // Change this to the actual student email
 
 async function checkStudentBoard() {
   try {
-    const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
+    const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+    if (!MONGO_URI) {
+      console.error('❌ MONGO_URI is not set in environment variables!');
+      process.exit(1);
+    }
     await mongoose.connect(MONGO_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,

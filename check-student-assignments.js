@@ -1,8 +1,12 @@
 import mongoose from 'mongoose';
 import User from './models/User.js';
 
-// MongoDB connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
+// MongoDB connection - must be set in .env
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error('❌ MONGO_URI is not set in environment variables!');
+  process.exit(1);
+}
 
 async function checkStudentAssignments() {
   try {

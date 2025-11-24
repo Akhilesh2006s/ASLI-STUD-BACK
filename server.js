@@ -3,14 +3,20 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import connectDB from './config/database.js';
 import superAdminRoutes from './routes/superAdmin.js';
 import adminRoutes from './routes/admin.js';
 import { verifyToken, verifySuperAdmin } from './middleware/auth.js';
 import User from './models/User.js';
 
-// Load environment variables
-dotenv.config();
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load environment variables - explicitly specify path
+dotenv.config({ path: join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -45,13 +51,22 @@ app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     
     // Check for Super Admin credentials first
-    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+    const superAdminCredentials = [
+      { email: 'Amenity@gmail.com', password: 'Amenity', fullName: 'Super Admin' },
+      { email: 'sealucknow2017@gmail.com', password: 'Asli123', fullName: 'Super Admin' }
+    ];
+    
+    const validCredential = superAdminCredentials.find(
+      cred => cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
+    );
+    
+    if (validCredential) {
       console.log('Super Admin login detected');
       const token = jwt.sign(
         { 
           id: 'super-admin-001',
-          email: 'Amenity@gmail.com',
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         },
         process.env.JWT_SECRET || 'your-secret-key',
@@ -63,8 +78,8 @@ app.post('/api/auth/login', async (req, res) => {
         token,
         user: {
           id: 'super-admin-001',
-          email: 'Amenity@gmail.com',
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         }
       });
@@ -78,7 +93,7 @@ app.post('/api/auth/login', async (req, res) => {
       console.log('User not found in database');
       return res.status(401).json({ 
         success: false,
-        message: 'Invalid credentials' 
+        message: 'User not found' 
       });
     }
     
@@ -236,20 +251,24 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log('🚀 Super Admin Backend Server Started!');
   console.log(`📡 Server running on port ${PORT}`);
-  const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
-                  process.env.RAILWAY_STATIC_URL || 
+  
+  // Use local environment variables first, not Railway
+  const baseUrl = process.env.BASE_URL || 
+                  process.env.API_BASE_URL || 
                   `http://localhost:${PORT}`;
+  
   console.log(`🌐 API Base URL: ${baseUrl}`);
   console.log(`🔐 Super Admin Login: ${baseUrl}/api/super-admin/login`);
   console.log(`📊 Dashboard Stats: ${baseUrl}/api/super-admin/stats`);
   console.log('');
   console.log('🔑 Super Admin Credentials:');
-  console.log('   Email: Amenity@gmail.com');
-  console.log('   Password: Amenity');
+  console.log('   Email: Amenity@gmail.com / sealucknow2017@gmail.com');
+  console.log('   Password: Amenity / Asli123');
   console.log('');
-  const frontendUrl = process.env.RAILWAY_PUBLIC_DOMAIN || 
-                      process.env.RAILWAY_STATIC_URL || 
-                      'http://localhost:3001';
+  
+  const frontendUrl = process.env.FRONTEND_URL || 
+                      process.env.CLIENT_URL || 
+                      'http://localhost:5173';
   console.log(`📱 Frontend should connect to: ${frontendUrl}`);
   console.log('✅ Ready to accept requests!');
 });
