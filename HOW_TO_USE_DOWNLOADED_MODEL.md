@@ -149,3 +149,5 @@ Now just:
 
 **No file copying needed - Ollama handles everything automatically!** 🚀
 
+
+

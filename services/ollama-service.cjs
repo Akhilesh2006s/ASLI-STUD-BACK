@@ -6,7 +6,7 @@ const fetch = globalThis.fetch || require('node-fetch');
 class OllamaService {
   constructor() {
     this.baseUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-    this.textModel = process.env.OLLAMA_TEXT_MODEL || 'llama3'; // llama3, phi3-mini, llama3.2:1b, gemma2:2b
+    this.textModel = process.env.OLLAMA_TEXT_MODEL || 'llama3:latest'; // llama3:latest, llama3, phi3-mini, llama3.2:1b, gemma2:2b
     this.visionModel = process.env.OLLAMA_VISION_MODEL || 'llava:7b'; // llava:7b, bakllava:7b
     this.isAvailable = false;
     this.initializeOllama();
@@ -29,15 +29,26 @@ class OllamaService {
         
         // Check if required models are available
         const availableModelNames = data.models?.map(m => m.name) || [];
+        const textModelBase = this.textModel.split(':')[0];
         const hasTextModel = availableModelNames.some(name => 
-          name.includes(this.textModel.split(':')[0])
+          name.includes(textModelBase) || name === this.textModel || name === `${textModelBase}:latest`
         );
         const hasVisionModel = availableModelNames.some(name => 
           name.includes(this.visionModel.split(':')[0])
         );
         
-        if (!hasTextModel) {
-          console.warn(`⚠️  Text model '${this.textModel}' not found. Run: ollama pull ${this.textModel}`);
+        // Find and use exact model name
+        if (hasTextModel) {
+          const exactModelName = availableModelNames.find(name => 
+            name === this.textModel || name === `${textModelBase}:latest` || name.includes(textModelBase)
+          );
+          if (exactModelName && exactModelName !== this.textModel) {
+            console.log(`📝 Using exact model name: ${exactModelName} (configured as ${this.textModel})`);
+            this.textModel = exactModelName; // Update to exact name
+          }
+        } else {
+          console.warn(`⚠️  Text model '${this.textModel}' not found. Available: ${availableModelNames.join(', ')}`);
+          console.warn(`💡 Run: ollama pull ${this.textModel}`);
         }
         if (!hasVisionModel) {
           console.warn(`⚠️  Vision model '${this.visionModel}' not found. Run: ollama pull ${this.visionModel}`);
@@ -56,20 +67,22 @@ class OllamaService {
   }
 
   async generateResponse(message, context = {}, chatHistory = []) {
-    // Try Ollama first if available
-    if (this.isAvailable) {
-      try {
-        console.log('🤖 Using Ollama for response...');
-        return await this.generateOllamaResponse(message, context, chatHistory);
-      } catch (error) {
-        console.log('❌ Ollama failed, falling back to enhanced service:', error.message);
-        // Don't set isAvailable to false, might be temporary issue
-      }
+    // Always try Ollama first, even if initialization had issues
+    // This allows recovery if Ollama becomes available later
+    try {
+      console.log('🤖 Attempting to use Ollama for response...');
+      console.log(`   isAvailable: ${this.isAvailable}`);
+      console.log(`   Model: ${this.textModel}`);
+      const result = await this.generateOllamaResponse(message, context, chatHistory);
+      console.log('✅ Ollama response received successfully');
+      return result;
+    } catch (error) {
+      console.log('❌ Ollama failed, falling back to enhanced service:', error.message);
+      console.log('   Error details:', error.stack?.split('\n')[0]);
+      // Fall back to enhanced service
+      console.log('🔄 Using enhanced fallback service...');
+      return await this.generateEnhancedResponse(message, context, chatHistory);
     }
-    
-    // Fall back to enhanced service
-    console.log('🔄 Using enhanced fallback service...');
-    return await this.generateEnhancedResponse(message, context, chatHistory);
   }
 
   async generateOllamaResponse(message, context = {}, chatHistory = []) {
@@ -109,28 +122,61 @@ Guidelines:
       const fullPrompt = `${systemPrompt}${conversationHistory}\n\nStudent: ${message}\n\nVidya AI:`;
 
       // Call Ollama API - matching your endpoint format
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: this.textModel,
-          prompt: fullPrompt,
-          stream: false
-        })
-      });
+      console.log(`📤 Calling Ollama API...`);
+      console.log(`   URL: ${this.baseUrl}/api/generate`);
+      console.log(`   Model: ${this.textModel}`);
+      console.log(`   Prompt length: ${fullPrompt.length} characters`);
+      
+      // Add timeout (60 seconds for Ollama - it can be slow on CPU)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        controller.abort();
+        console.log('⏱️ Ollama request timeout after 60 seconds');
+      }, 60000); // 60 second timeout
+      
+      try {
+        const response = await fetch(`${this.baseUrl}/api/generate`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: this.textModel,
+            prompt: fullPrompt,
+            stream: false
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        console.log(`📥 Ollama API response status: ${response.status}`);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`❌ Ollama API error: HTTP ${response.status}`);
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        const data = await response.json();
+        const responseText = data.response || 'I apologize, but I could not generate a response.';
+        console.log(`✅ Ollama response received (${responseText.length} characters)`);
+        return responseText;
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          console.error('⏱️ Ollama request timed out after 60 seconds');
+          throw new Error('Ollama request timed out after 60 seconds. The model might be too slow or overloaded. Try using a smaller model like llama3.2:1b for faster responses.');
+        }
+        console.error('❌ Fetch error:', fetchError.message);
+        throw fetchError;
       }
-
-      const data = await response.json();
-      return data.response || 'I apologize, but I could not generate a response.';
     } catch (error) {
-      console.error('Ollama API error:', error);
-      throw new Error('Failed to generate Ollama response');
+      console.error('❌ Ollama API error:', error.message);
+      console.error('   Error type:', error.name);
+      if (error.stack) {
+        console.error('   Stack:', error.stack.split('\n').slice(0, 2).join(' | '));
+      }
+      throw error; // Re-throw to let caller handle it
     }
   }
 

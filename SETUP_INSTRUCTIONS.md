@@ -228,3 +228,5 @@ npm start
 
 **You're all set!** Once Ollama is installed and models are downloaded, your app will use local CPU-based AI instead of external APIs.
 
+
+

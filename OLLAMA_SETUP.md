@@ -268,3 +268,5 @@ The application has been updated to use Ollama instead of Gemini API. The interf
 
 The application will automatically use Ollama if available, or fall back to enhanced mock responses if Ollama is not running.
 
+
+

@@ -106,3 +106,5 @@ Invoke-RestMethod -Uri "http://localhost:11434/api/generate" -Method Post -Conte
 
 **Integration complete!** The service now matches your API endpoint format exactly.
 
+
+

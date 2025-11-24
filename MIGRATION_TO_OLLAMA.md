@@ -209,3 +209,5 @@ If you need to rollback to Gemini API:
 
 Your app is now running on local CPU-based AI. Enjoy the benefits of offline operation, privacy, and no API costs!
 
+
+

@@ -74,3 +74,5 @@ OLLAMA_VISION_MODEL=llava:7b
 
 See `OLLAMA_SETUP.md` for detailed documentation.
 
+
+
