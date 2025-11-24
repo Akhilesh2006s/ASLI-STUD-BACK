@@ -13,14 +13,36 @@ class OllamaService {
   }
 
   async initializeOllama() {
+    // Skip initialization if Ollama is disabled (for Railway without Ollama)
+    if (process.env.DISABLE_OLLAMA === 'true') {
+      console.log('⚠️  Ollama is disabled (DISABLE_OLLAMA=true)');
+      this.isAvailable = false;
+      return;
+    }
+    
     try {
       console.log('🔧 Initializing Ollama service...');
       console.log(`📍 Ollama URL: ${this.baseUrl}`);
       console.log(`📝 Text Model: ${this.textModel}`);
       console.log(`👁️  Vision Model: ${this.visionModel}`);
       
-      // Test Ollama connection
-      const response = await fetch(`${this.baseUrl}/api/tags`);
+      // Test Ollama connection with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout for init
+      
+      let response;
+      try {
+        response = await fetch(`${this.baseUrl}/api/tags`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === 'AbortError') {
+          throw new Error('Ollama connection timeout - Ollama may not be installed or running');
+        }
+        throw fetchError;
+      }
       
       if (response.ok) {
         const data = await response.json();
@@ -61,8 +83,9 @@ class OllamaService {
       }
     } catch (error) {
       console.log('⚠️  Ollama initialization failed:', error.message);
-      console.log('💡 Make sure Ollama is installed and running on', this.baseUrl);
-      console.log('💡 Install from: https://ollama.ai');
+      console.log('💡 Ollama not available - will use fallback responses');
+      console.log('💡 To enable Ollama: Install on server or set OLLAMA_BASE_URL to external service');
+      this.isAvailable = false; // Explicitly set to false on failure
     }
   }
 
