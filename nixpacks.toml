@@ -1,0 +1,21 @@
+# Nixpacks configuration for Railway
+# This installs Ollama and downloads models
+
+[phases.setup]
+nixPkgs = ["curl", "wget"]
+
+[phases.install]
+cmds = [
+  "echo 'Installing Ollama...'",
+  "curl -fsSL https://ollama.ai/install.sh | sh || echo 'Ollama install failed, will use fallback'",
+  "echo 'Ollama installation complete'"
+]
+
+[phases.build]
+cmds = [
+  "npm install"
+]
+
+[start]
+cmd = "node index.js"
+
