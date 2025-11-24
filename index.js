@@ -220,6 +220,35 @@ app.options('/api/*', (req, res) => {
   res.sendStatus(200);
 });
 
+// Auth routes (define before other routes to avoid conflicts)
+app.post('/api/auth/logout', (req, res) => {
+  // For JWT-based auth, logout is handled client-side by removing the token
+  // This endpoint just confirms the logout request
+  // If using sessions, use req.logout()
+  try {
+    console.log('Logout request received');
+    
+    if (req.logout && typeof req.logout === 'function') {
+      // Session-based logout (if using sessions)
+      req.logout((err) => {
+        if (err) {
+          console.error('Logout error:', err);
+          return res.status(500).json({ success: false, message: 'Logout failed' });
+        }
+        res.json({ success: true, message: 'Logout successful' });
+      });
+    } else {
+      // JWT-based logout (token removed client-side)
+      // Always return success - logout is handled client-side
+      res.json({ success: true, message: 'Logout successful' });
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still return success for JWT-based auth since token is removed client-side
+    res.json({ success: true, message: 'Logout successful' });
+  }
+});
+
 // Mount routes
 app.use('/api/super-admin', superAdminRoutes);
 app.use('/api/admin', adminRoutes);
@@ -687,31 +716,6 @@ app.post('/api/auth/login', async (req, res) => {
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
-  }
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  // For JWT-based auth, logout is handled client-side by removing the token
-  // This endpoint just confirms the logout request
-  // If using sessions, use req.logout()
-  try {
-    if (req.logout && typeof req.logout === 'function') {
-      // Session-based logout (if using sessions)
-      req.logout((err) => {
-        if (err) {
-          console.error('Logout error:', err);
-          return res.status(500).json({ success: false, message: 'Logout failed' });
-        }
-        res.json({ success: true, message: 'Logout successful' });
-      });
-    } else {
-      // JWT-based logout (token removed client-side)
-      res.json({ success: true, message: 'Logout successful' });
-    }
-  } catch (error) {
-    console.error('Logout error:', error);
-    // Still return success for JWT-based auth since token is removed client-side
-    res.json({ success: true, message: 'Logout successful' });
   }
 });
 
@@ -1293,9 +1297,48 @@ app.get('/api/admin/subjects', async (req, res) => {
       .sort({ name: 1 });
     
     console.log(`📚 Admin subjects endpoint: Found ${subjects.length} subjects for board: ${adminBoard || 'ALL'}`);
-    console.log('Admin subject names:', subjects.map(s => s.name));
     
-    res.json(subjects);
+    // Get all teachers and find which ones are assigned to each subject
+    const teachers = await Teacher.find({ isActive: true })
+      .select('_id fullName email subjects')
+      .lean();
+    
+    // Create a map of subject ID to assigned teachers
+    const subjectTeachersMap = new Map();
+    teachers.forEach(teacher => {
+      if (teacher.subjects && Array.isArray(teacher.subjects)) {
+        teacher.subjects.forEach(subjectId => {
+          const subjectIdStr = subjectId.toString();
+          if (!subjectTeachersMap.has(subjectIdStr)) {
+            subjectTeachersMap.set(subjectIdStr, []);
+          }
+          subjectTeachersMap.get(subjectIdStr).push({
+            id: teacher._id.toString(),
+            fullName: teacher.fullName,
+            email: teacher.email
+          });
+        });
+      }
+    });
+    
+    // Format subjects with teacher information
+    const formattedSubjects = subjects.map(subject => {
+      const subjectObj = subject.toObject();
+      const subjectIdStr = subject._id.toString();
+      const assignedTeachers = subjectTeachersMap.get(subjectIdStr) || [];
+      
+      // If there are multiple teachers, show the first one (or you can show all)
+      return {
+        ...subjectObj,
+        id: subjectObj._id.toString(),
+        teacher: assignedTeachers.length > 0 ? assignedTeachers[0] : null,
+        teachers: assignedTeachers // Include all teachers if needed
+      };
+    });
+    
+    console.log(`✅ Returning ${formattedSubjects.length} subjects with teacher assignments`);
+    
+    res.json(formattedSubjects);
   } catch (error) {
     console.error('Failed to fetch subjects:', error);
     res.status(500).json({ message: 'Failed to fetch subjects' });
