@@ -221,12 +221,18 @@ app.options('/api/*', (req, res) => {
 });
 
 // Auth routes (define before other routes to avoid conflicts)
+// Logout endpoint - NO authentication required (allows logout even with expired/invalid tokens)
 app.post('/api/auth/logout', (req, res) => {
   // For JWT-based auth, logout is handled client-side by removing the token
   // This endpoint just confirms the logout request
   // If using sessions, use req.logout()
   try {
-    console.log('Logout request received');
+    console.log('📤 Logout request received from:', req.headers.origin || 'unknown');
+    
+    // Handle CORS preflight if needed
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
     
     if (req.logout && typeof req.logout === 'function') {
       // Session-based logout (if using sessions)
@@ -240,6 +246,7 @@ app.post('/api/auth/logout', (req, res) => {
     } else {
       // JWT-based logout (token removed client-side)
       // Always return success - logout is handled client-side
+      console.log('✅ Logout successful (JWT-based)');
       res.json({ success: true, message: 'Logout successful' });
     }
   } catch (error) {
