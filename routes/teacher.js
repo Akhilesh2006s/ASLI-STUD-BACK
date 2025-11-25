@@ -225,8 +225,8 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
       return res.status(400).json({ success: false, message: 'Student work or file is required' });
     }
 
-    // Import Ollama service
-    const { ollamaService } = await import('../services/ollama-service.cjs');
+    // Import Gemini service
+    const { geminiService } = await import('../services/gemini-service.cjs');
     
     // Extract text from file if uploaded
     let workText = studentWork || '';
@@ -238,17 +238,17 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
         // For PDFs, we'll need to extract text (simplified - in production use pdf-parse or similar)
         workText = '[PDF file uploaded - content extraction would be implemented here]';
       } else if (file.mimetype.startsWith('image/')) {
-        // For images, convert to base64 and use Ollama vision
+        // For images, convert to base64 and use Gemini vision
         const imageBase64 = file.buffer.toString('base64');
         
-        // Use Ollama to extract text from image
+        // Use Gemini to extract text from image
         const context = 'Extract all text from this image. If this is student work (essay, assignment, answer), provide the complete text content.';
         
         try {
-          workText = await ollamaService.analyzeImage(imageBase64, context);
+          workText = await geminiService.analyzeImage(imageBase64, context);
         } catch (error) {
           console.error('Image analysis error:', error);
-          workText = '[Image uploaded - text extraction failed. Please provide text manually or ensure Ollama vision model is installed.]';
+          workText = '[Image uploaded - text extraction failed. Please provide text manually.]';
         }
       } else {
         workText = '[File uploaded - text extraction would be implemented for this file type]';
@@ -288,7 +288,7 @@ Please provide:
 Format your response clearly with sections and bullet points.`;
 
     // Generate grading using Gemini
-        const gradingResult = await ollamaService.generateResponse(gradingPrompt, {}, []);
+        const gradingResult = await geminiService.generateResponse(gradingPrompt, {}, []);
     
     res.json({
       success: true,

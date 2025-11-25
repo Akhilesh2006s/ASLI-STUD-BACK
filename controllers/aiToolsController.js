@@ -3,7 +3,7 @@ import {
   generateTestQuestions,
   generateClasswork,
   generateSchedule
-} from '../services/ollama-service.js';
+} from '../services/gemini-service.js';
 
 // Generate Lesson Plan
 export const createLessonPlan = async (req, res) => {
