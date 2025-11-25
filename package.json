@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
+    "start:ollama": "bash start-with-ollama.sh",
     "dev": "nodemon index.js",
     "build": "echo 'No build step required'",
     "postinstall": "echo 'Dependencies installed successfully'",

@@ -12,10 +12,12 @@ const __dirname = dirname(__filename);
 import User from './models/User.js';
 import Subject from './models/Subject.js';
 
-// Connect to MongoDB - use the same connection string as index.js
-const MONGODB_URI = process.env.MONGO_URI || 
-                   process.env.MONGODB_URI || 
-                   'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
+// Connect to MongoDB - must be set in .env
+const MONGODB_URI = process.env.MONGO_URI || process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error('❌ MONGO_URI is not set in environment variables!');
+  process.exit(1);
+}
 
 async function checkAdminSubjects() {
   try {

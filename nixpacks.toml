@@ -1,0 +1,23 @@
+# Nixpacks configuration for Railway
+# Railway auto-detects Node.js from package.json, so we don't need to specify it
+
+[phases.setup]
+nixPkgs = ["curl", "wget"]
+
+[phases.install]
+cmds = [
+  "echo 'Installing Ollama (optional)...'",
+  "curl -fsSL https://ollama.ai/install.sh | sh || echo 'Ollama install failed - will use fallback responses'",
+  "echo 'Ollama installation attempt complete'"
+]
+
+[phases.build]
+cmds = [
+  "npm install"
+]
+
+# Railway will use package.json "start" script by default
+# Or you can override with Railway dashboard settings
+[start]
+cmd = "node index.js"
+

@@ -1,7 +1,7 @@
-import axios from 'axios';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const GEMINI_API_KEY = 'AIzaSyDExDEuif6KRk5suciCPLr1sDqkQFDfNb8';
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyDExDEuif6KRk5suciCPLr1sDqkQFDfNb8';
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 class AIService {
   async analyzeEducationalData(data) {
@@ -136,26 +136,16 @@ Provide comprehensive, actionable insights that can drive educational improvemen
 
   async callGeminiAPI(prompt) {
     try {
-      const response = await axios.post(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 8192,
-        }
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000
+      const systemInstruction = 'You are an advanced AI educational analyst. Respond ONLY with valid JSON, no markdown, no code blocks, just pure JSON.';
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+
+      const result = await model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        systemInstruction: systemInstruction
       });
 
-      return response.data.candidates[0].content.parts[0].text;
+      const response = await result.response;
+      return response.text();
     } catch (error) {
       console.error('Gemini API call failed:', error);
       throw error;
@@ -164,8 +154,11 @@ Provide comprehensive, actionable insights that can drive educational improvemen
 
   parseAIResponse(response) {
     try {
+      // Clean JSON response (remove markdown code blocks if present)
+      let cleanedResponse = response.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      
       // Extract JSON from response
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = cleanedResponse.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }

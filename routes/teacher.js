@@ -226,7 +226,7 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
     }
 
     // Import Gemini service
-    const { restGeminiService } = await import('../services/rest-gemini.cjs');
+    const { geminiService } = await import('../services/gemini-service.cjs');
     
     // Extract text from file if uploaded
     let workText = studentWork || '';
@@ -240,34 +240,15 @@ router.post('/grade-work', upload.single('file'), async (req, res) => {
       } else if (file.mimetype.startsWith('image/')) {
         // For images, convert to base64 and use Gemini vision
         const imageBase64 = file.buffer.toString('base64');
-        const imageMimeType = file.mimetype;
         
         // Use Gemini to extract text from image
-        const prompt = `Extract all text from this image. If this is student work (essay, assignment, answer), provide the complete text content.`;
+        const context = 'Extract all text from this image. If this is student work (essay, assignment, answer), provide the complete text content.';
         
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY || 'AIzaSyDExDEuif6KRk5suciCPLr1sDqkQFDfNb8'}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                { text: prompt },
-                {
-                  inlineData: {
-                    data: imageBase64,
-                    mimeType: imageMimeType
-                  }
-                }
-              ]
-            }]
-          })
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          workText = data.candidates[0].content.parts[0].text;
+        try {
+          workText = await geminiService.analyzeImage(imageBase64, context);
+        } catch (error) {
+          console.error('Image analysis error:', error);
+          workText = '[Image uploaded - text extraction failed. Please provide text manually.]';
         }
       } else {
         workText = '[File uploaded - text extraction would be implemented for this file type]';
@@ -307,7 +288,7 @@ Please provide:
 Format your response clearly with sections and bullet points.`;
 
     // Generate grading using Gemini
-    const gradingResult = await restGeminiService.generateResponse(gradingPrompt, {}, []);
+        const gradingResult = await geminiService.generateResponse(gradingPrompt, {}, []);
     
     res.json({
       success: true,

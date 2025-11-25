@@ -7,7 +7,11 @@ dotenv.config();
 
 const connectDB = async () => {
   try {
-    const mongoUri = process.env.MONGO_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      console.error('❌ MONGO_URI is not set in environment variables!');
+      process.exit(1);
+    }
     await mongoose.connect(mongoUri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,

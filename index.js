@@ -8,6 +8,12 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Get current directory for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Import models
 import User from './models/User.js';
@@ -29,8 +35,17 @@ import studentRoutes from './routes/student.js';
 import aiRoutes from './routes/ai.js';
 import streamRoutes from './routes/streams.js';
 
-// Load environment variables
-dotenv.config();
+// Load environment variables - explicitly specify path
+const envPath = join(__dirname, '.env');
+const envResult = dotenv.config({ path: envPath });
+
+// Debug: Log if .env file was found
+if (envResult.error) {
+  console.warn('⚠️  Warning: Could not load .env file:', envResult.error.message);
+  console.warn('   Attempted path:', envPath);
+} else {
+  console.log('✅ Loaded .env file from:', envPath);
+}
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -41,74 +56,36 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-// MongoDB connection
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://akhileshsamayamanthula:rxvIPIT4Bzobk9Ne@cluster0.4ej8ne2.mongodb.net/EDU-AI?retryWrites=true&w=majority&appName=Cluster0';
+// MongoDB connection - MUST be set in .env file
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error('❌ MONGO_URI is not set in environment variables!');
+  console.error('   Please set MONGO_URI in your .env file');
+  process.exit(1);
+}
+
+// Log which database is being connected to (without showing password)
+const uriForLogging = MONGO_URI.replace(/\/\/([^:]+):([^@]+)@/, '//$1:***@');
+const dbName = MONGO_URI.split('/').pop()?.split('?')[0] || 'Unknown';
+console.log('🔌 Connecting to MongoDB...');
+console.log('📍 URI:', uriForLogging);
+console.log('📦 Database:', dbName);
 
 mongoose.connect(MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
 .then(async () => {
-  console.log('Connected to MongoDB Atlas');
-  // Initialize boards
-  const { initializeBoards, seedClass10Subjects } = await import('./controllers/boardController.js');
+  const dbName = mongoose.connection.db.databaseName;
+  console.log('✅ Connected to MongoDB Atlas');
+  console.log('📊 Database Name:', dbName);
+  console.log('🔗 Connection State:', mongoose.connection.readyState === 1 ? 'Connected' : 'Not Connected');
+  // Initialize boards (creates board structure only, no seed data)
+  const { initializeBoards } = await import('./controllers/boardController.js');
   await initializeBoards();
-  // Seed class 10 subjects for all boards
-  await seedClass10Subjects();
-  // Seed some sample subjects if none exist
-  seedSampleData();
 })
-.catch(err => console.error('MongoDB connection error:', err));
-
-// Seed sample data
-async function seedSampleData() {
-  try {
-    const subjectCount = await Subject.countDocuments();
-    if (subjectCount === 0) {
-      console.log('Seeding sample subjects...');
-      
-      const sampleSubjects = [
-        {
-          name: 'Mathematics',
-          code: 'MATH101',
-          description: 'Advanced Mathematics and Calculus',
-          grade: '12',
-          department: 'Mathematics',
-          isActive: true
-        },
-        {
-          name: 'Physics',
-          code: 'PHYS101',
-          description: 'Classical Mechanics and Thermodynamics',
-          grade: '11',
-          department: 'Physics',
-          isActive: true
-        },
-        {
-          name: 'Chemistry',
-          code: 'CHEM101',
-          description: 'Organic and Inorganic Chemistry',
-          grade: '12',
-          department: 'Chemistry',
-          isActive: true
-        },
-        {
-          name: 'English',
-          code: 'ENG101',
-          description: 'Literature and Language',
-          grade: '10',
-          department: 'English',
-          isActive: true
-        }
-      ];
-
-      await Subject.insertMany(sampleSubjects);
-      console.log('Sample subjects created successfully');
-    }
-  } catch (error) {
-    console.error('Error seeding sample data:', error);
-  }
-}
+.catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Middleware
 const allowedOrigins = [
@@ -122,6 +99,9 @@ const allowedOrigins = [
   'http://localhost:5177',
   // New Vercel frontend URL
   'https://asli-frontend.vercel.app',
+  // Custom domain
+  'https://aslilearn.ai',
+  'https://www.aslilearn.ai',
   // Old Vercel URLs (keeping for backward compatibility)
   'https://alsi-stud-frontend-mf3r-ampkob5el-akhilesh2006s-projects.vercel.app',
   'https://alsi-stud-frontend-mf3r-es6c3f5aq-akhilesh2006s-projects.vercel.app',
@@ -173,8 +153,13 @@ app.use(cors({
       return callback(null, true);
     }
 
-  // Allow localhost during local dev
+    // Allow localhost during local dev
   if (origin && origin.match(/^http:\/\/localhost:(5173|4173|4174)$/)) {
+    return callback(null, true);
+  }
+  
+  // Allow custom domain aslilearn.ai and its subdomains
+  if (origin && origin.match(/^https:\/\/(www\.)?aslilearn\.ai$/)) {
     return callback(null, true);
   }
     
@@ -218,6 +203,42 @@ app.options('/api/*', (req, res) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Expose-Headers', 'Set-Cookie');
   res.sendStatus(200);
+});
+
+// Auth routes (define before other routes to avoid conflicts)
+// Logout endpoint - NO authentication required (allows logout even with expired/invalid tokens)
+app.post('/api/auth/logout', (req, res) => {
+  // For JWT-based auth, logout is handled client-side by removing the token
+  // This endpoint just confirms the logout request
+  // If using sessions, use req.logout()
+  try {
+    console.log('📤 Logout request received from:', req.headers.origin || 'unknown');
+    
+    // Handle CORS preflight if needed
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    
+    if (req.logout && typeof req.logout === 'function') {
+      // Session-based logout (if using sessions)
+      req.logout((err) => {
+        if (err) {
+          console.error('Logout error:', err);
+          return res.status(500).json({ success: false, message: 'Logout failed' });
+        }
+        res.json({ success: true, message: 'Logout successful' });
+      });
+    } else {
+      // JWT-based logout (token removed client-side)
+      // Always return success - logout is handled client-side
+      console.log('✅ Logout successful (JWT-based)');
+      res.json({ success: true, message: 'Logout successful' });
+    }
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still return success for JWT-based auth since token is removed client-side
+    res.json({ success: true, message: 'Logout successful' });
+  }
 });
 
 // Mount routes
@@ -483,14 +504,23 @@ app.post('/api/auth/login', async (req, res) => {
     }
     
     // Check for Super Admin credentials first
-    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+    const superAdminCredentials = [
+      { email: 'Amenity@gmail.com', password: 'Amenity', fullName: 'Super Admin' },
+      { email: 'sealucknow2017@gmail.com', password: 'Asli123', fullName: 'Super Admin' }
+    ];
+    
+    const validCredential = superAdminCredentials.find(
+      cred => cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
+    );
+    
+    if (validCredential) {
       console.log('Super Admin login detected');
       const token = jwt.sign(
         { 
           id: 'super-admin-001',
           userId: 'super-admin-001',
-          email: 'Amenity@gmail.com',
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         },
         process.env.JWT_SECRET || 'your-secret-key',
@@ -503,8 +533,8 @@ app.post('/api/auth/login', async (req, res) => {
         user: {
           id: 'super-admin-001',
           _id: 'super-admin-001',
-          email: 'Amenity@gmail.com',
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         }
       });
@@ -627,8 +657,7 @@ app.post('/api/auth/login', async (req, res) => {
       console.log(`Login failed: User with email ${email.toLowerCase()} not found`);
       return res.status(401).json({ 
         success: false,
-        message: 'Invalid credentials',
-        hint: 'User not found in database'
+        message: 'User not found'
       });
     }
 
@@ -687,31 +716,6 @@ app.post('/api/auth/login', async (req, res) => {
       error: error.message,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
-  }
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  // For JWT-based auth, logout is handled client-side by removing the token
-  // This endpoint just confirms the logout request
-  // If using sessions, use req.logout()
-  try {
-    if (req.logout && typeof req.logout === 'function') {
-      // Session-based logout (if using sessions)
-      req.logout((err) => {
-        if (err) {
-          console.error('Logout error:', err);
-          return res.status(500).json({ success: false, message: 'Logout failed' });
-        }
-        res.json({ success: true, message: 'Logout successful' });
-      });
-    } else {
-      // JWT-based logout (token removed client-side)
-      res.json({ success: true, message: 'Logout successful' });
-    }
-  } catch (error) {
-    console.error('Logout error:', error);
-    // Still return success for JWT-based auth since token is removed client-side
-    res.json({ success: true, message: 'Logout successful' });
   }
 });
 
@@ -1168,6 +1172,14 @@ app.get('/api/admin/teachers', async (req, res) => {
       .select('-password')
       .sort({ createdAt: -1 });
     
+    if (!teachers || teachers.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No teachers found in database',
+        data: []
+      });
+    }
+    
     // Transform the data to include assignedClassIds
     const transformedTeachers = teachers.map(teacher => ({
       _id: teacher._id,
@@ -1292,10 +1304,57 @@ app.get('/api/admin/subjects', async (req, res) => {
       .populate('createdBy', 'fullName email')
       .sort({ name: 1 });
     
-    console.log(`📚 Admin subjects endpoint: Found ${subjects.length} subjects for board: ${adminBoard || 'ALL'}`);
-    console.log('Admin subject names:', subjects.map(s => s.name));
+    if (!subjects || subjects.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No subjects found in database',
+        data: []
+      });
+    }
     
-    res.json(subjects);
+    console.log(`📚 Admin subjects endpoint: Found ${subjects.length} subjects for board: ${adminBoard || 'ALL'}`);
+    
+    // Get all teachers and find which ones are assigned to each subject
+    const teachers = await Teacher.find({ isActive: true })
+      .select('_id fullName email subjects')
+      .lean();
+    
+    // Create a map of subject ID to assigned teachers
+    const subjectTeachersMap = new Map();
+    teachers.forEach(teacher => {
+      if (teacher.subjects && Array.isArray(teacher.subjects)) {
+        teacher.subjects.forEach(subjectId => {
+          const subjectIdStr = subjectId.toString();
+          if (!subjectTeachersMap.has(subjectIdStr)) {
+            subjectTeachersMap.set(subjectIdStr, []);
+          }
+          subjectTeachersMap.get(subjectIdStr).push({
+            id: teacher._id.toString(),
+            fullName: teacher.fullName,
+            email: teacher.email
+          });
+        });
+      }
+    });
+    
+    // Format subjects with teacher information
+    const formattedSubjects = subjects.map(subject => {
+      const subjectObj = subject.toObject();
+      const subjectIdStr = subject._id.toString();
+      const assignedTeachers = subjectTeachersMap.get(subjectIdStr) || [];
+      
+      // If there are multiple teachers, show the first one (or you can show all)
+      return {
+        ...subjectObj,
+        id: subjectObj._id.toString(),
+        teacher: assignedTeachers.length > 0 ? assignedTeachers[0] : null,
+        teachers: assignedTeachers // Include all teachers if needed
+      };
+    });
+    
+    console.log(`✅ Returning ${formattedSubjects.length} subjects with teacher assignments`);
+    
+    res.json(formattedSubjects);
   } catch (error) {
     console.error('Failed to fetch subjects:', error);
     res.status(500).json({ message: 'Failed to fetch subjects' });
@@ -1344,7 +1403,10 @@ app.put('/api/admin/subjects/:id', async (req, res) => {
     
     const subject = await Subject.findById(id);
     if (!subject) {
-      return res.status(404).json({ message: 'Subject not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Subject not found in database' 
+      });
     }
 
     // If teacher is being changed, update both old and new teacher
@@ -1372,7 +1434,10 @@ app.delete('/api/admin/subjects/:id', async (req, res) => {
     
     const subject = await Subject.findById(id);
     if (!subject) {
-      return res.status(404).json({ message: 'Subject not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Subject not found in database' 
+      });
     }
 
     // Remove from teacher's subjects array
@@ -1399,7 +1464,10 @@ app.post('/api/admin/teachers/:id/assign-subjects', async (req, res) => {
     const teacher = await Teacher.findById(id);
     if (!teacher) {
       console.log('Teacher not found:', id);
-      return res.status(404).json({ message: 'Teacher not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Teacher not found in database' 
+      });
     }
 
     console.log('Teacher found:', teacher.email, 'Current subjects:', teacher.subjects);
@@ -1433,6 +1501,15 @@ app.get('/api/admin/exams', async (req, res) => {
       .populate('createdBy', 'fullName email')
       .populate('questions')
       .sort({ createdAt: -1 });
+    
+    if (!exams || exams.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No exams found in database',
+        data: []
+      });
+    }
+    
     res.json(exams);
   } catch (error) {
     console.error('Failed to fetch exams:', error);
@@ -1729,7 +1806,10 @@ app.get('/api/debug/exam-answers/:examId', async (req, res) => {
     const exam = await Exam.findById(examId).populate('questions');
     
     if (!exam) {
-      return res.status(404).json({ error: 'Exam not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Exam not found in database' 
+      });
     }
     
     const questionsWithAnswers = exam.questions.map((question, index) => ({
@@ -2350,11 +2430,22 @@ app.get('/api/student/content', async (req, res) => {
       Assessment.find({ isPublished: true }).populate('createdBy', 'fullName').sort({ createdAt: -1 })
     ]);
     
+    if ((!videos || videos.length === 0) && (!assessments || assessments.length === 0)) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No content found in database',
+        videos: [],
+        assessments: [],
+        totalVideos: 0,
+        totalAssessments: 0
+      });
+    }
+    
     res.json({
-      videos,
-      assessments,
-      totalVideos: videos.length,
-      totalAssessments: assessments.length
+      videos: videos || [],
+      assessments: assessments || [],
+      totalVideos: videos ? videos.length : 0,
+      totalAssessments: assessments ? assessments.length : 0
     });
   } catch (error) {
     console.error('Failed to fetch student content:', error);
@@ -2960,6 +3051,14 @@ app.get('/api/admin/classes', async (req, res) => {
       assignedAdmin: adminId 
     }).select('fullName email classNumber phone isActive createdAt lastLogin');
     
+    if (!students || students.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No students found in database',
+        data: []
+      });
+    }
+    
     // Create a map of classNumber+section to students
     const studentClassMap = new Map();
     students.forEach(student => {
@@ -3410,7 +3509,7 @@ app.use((err, req, res, next) => {
 });
 
 // AI Chat endpoints
-import { restGeminiService } from './services/rest-gemini.cjs';
+import { geminiService } from './services/gemini-service.cjs';
 
 // Store chat sessions in memory (in production, use a database)
 const chatSessions = new Map();
@@ -3446,7 +3545,7 @@ app.post('/api/ai-chat', async (req, res) => {
     session.messages.push(userMessage);
 
     // Generate AI response
-    const aiResponse = await restGeminiService.generateResponse(
+    const aiResponse = await geminiService.generateResponse(
       message, 
       context || session.context, 
       session.messages.slice(-10) // Last 10 messages for context
@@ -3506,7 +3605,7 @@ app.post('/api/ai-chat/analyze-image', async (req, res) => {
     // Remove data URL prefix if present
     const base64Data = image.replace(/^data:image\/[a-z]+;base64,/, '');
     
-    const analysis = await restGeminiService.analyzeImage(base64Data, context);
+    const analysis = await geminiService.analyzeImage(base64Data, context);
 
     res.json({
       success: true,
@@ -3527,6 +3626,14 @@ app.get('/api/subjects', async (req, res) => {
       .populate('createdBy', 'fullName')
       .sort({ createdAt: -1 });
     
+    if (!subjects || subjects.length === 0) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'No subjects found in database',
+        subjects: []
+      });
+    }
+    
     res.json({ success: true, subjects });
   } catch (error) {
     console.error('Error fetching subjects:', error);
@@ -3546,7 +3653,10 @@ app.get('/api/subjects/:id', async (req, res) => {
     const subject = await Subject.findById(id);
     
     if (!subject) {
-      return res.status(404).json({ success: false, message: 'Subject not found' });
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Subject not found in database' 
+      });
     }
     
     res.json({ success: true, subject });
@@ -3716,13 +3826,23 @@ app.post('/api/super-admin/login', async (req, res) => {
   try {
     const { email, password } = req.body;
     
+    // Super admin credentials
+    const superAdminCredentials = [
+      { email: 'Amenity@gmail.com', password: 'Amenity', fullName: 'Super Admin' },
+      { email: 'sealucknow2017@gmail.com', password: 'Asli123', fullName: 'Super Admin' }
+    ];
+    
     // Check super admin credentials
-    if (email === 'Amenity@gmail.com' && password === 'Amenity') {
+    const validCredential = superAdminCredentials.find(
+      cred => cred.email.toLowerCase() === email.toLowerCase() && cred.password === password
+    );
+    
+    if (validCredential) {
       const token = jwt.sign(
         { 
           id: 'super-admin-001',
-          email: email,
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         },
         process.env.JWT_SECRET || 'your-secret-key',
@@ -3734,8 +3854,8 @@ app.post('/api/super-admin/login', async (req, res) => {
         token,
         user: {
           id: 'super-admin-001',
-          email: email,
-          fullName: 'Super Admin',
+          email: validCredential.email,
+          fullName: validCredential.fullName,
           role: 'super-admin'
         }
       });
@@ -4580,7 +4700,7 @@ This is for IIT JEE Mains coaching, so please include:
 
 Make it practical, engaging, and focused on JEE Mains preparation. Include specific JEE-level problems and techniques that students need to master for the exam.`;
 
-    const lessonPlan = await restGeminiService.generateResponse(prompt, 'jee-lesson-plan-generation', []);
+    const lessonPlan = await geminiService.generateResponse(prompt, 'jee-lesson-plan-generation', []);
     
     res.json({
       success: true,
